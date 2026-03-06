@@ -110,9 +110,31 @@ textarea.field{resize:vertical}
 </div>
 
 <div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#8a7060">Loading&#8230;</div></div>
-<!-- Persistent camera inputs — must stay in DOM so OS can return to them -->
-<input id="cameraInputPersist" type="file" accept="image/*" capture="environment" style="display:none"/>
-<input id="galleryInputPersist" type="file" accept="image/*" style="display:none"/>
+
+<!-- Persistent inputs — stay in DOM so OS returns to them after camera/gallery -->
+<input id="camInputPersist"     type="file" accept="image/*" capture="environment" style="position:fixed;opacity:0;pointer-events:none;top:-9999px"/>
+<input id="galleryInputPersist" type="file" accept="image/*"                       style="position:fixed;opacity:0;pointer-events:none;top:-9999px"/>
+
+<!-- Photo action sheet -->
+<div id="photoSheet" style="display:none;position:fixed;inset:0;z-index:200">
+  <div id="photoSheetBg" style="position:absolute;inset:0;background:rgba(45,31,23,.5);backdrop-filter:blur(3px)"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:1rem;max-width:480px;margin:0 auto">
+    <div style="background:white;border-radius:18px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.25)">
+      <div style="padding:.9rem 1.2rem .7rem;border-bottom:1px solid var(--border)">
+        <div style="font-family:Georgia,serif;font-size:.95rem;color:var(--stone-dark);text-align:center">Foto hinzufügen</div>
+      </div>
+      <button id="sheetCameraBtn" style="width:100%;padding:1rem 1.2rem;background:none;border:none;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:.9rem;font-size:.95rem;color:var(--stone-dark);text-align:left">
+        <span style="font-size:1.4rem">📷</span>
+        <div><div style="font-weight:600">Kamera</div><div style="font-size:.75rem;color:var(--stone);margin-top:1px">Foto jetzt aufnehmen</div></div>
+      </button>
+      <button id="sheetGalleryBtn" style="width:100%;padding:1rem 1.2rem;background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.9rem;font-size:.95rem;color:var(--stone-dark);text-align:left">
+        <span style="font-size:1.4rem">🖼️</span>
+        <div><div style="font-weight:600">Galerie / Dateien</div><div style="font-size:.75rem;color:var(--stone);margin-top:1px">Bild aus Bibliothek wählen</div></div>
+      </button>
+    </div>
+    <button id="sheetCancelBtn" style="width:100%;margin-top:.6rem;padding:.95rem;background:white;border:none;border-radius:14px;cursor:pointer;font-size:.95rem;font-weight:600;color:var(--terracotta);box-shadow:0 4px 16px rgba(0,0,0,.12)">Abbrechen</button>
+  </div>
+</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -412,16 +434,11 @@ function buildMenu(){
     <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Provide the menu — photo, screenshot, URL, or typed text. Rates every dish for kidney safety based on your active profile.</p>
     
     <div style="margin-bottom:1rem">
-      <div class="lbl">📷 Photo</div>
-      <div style="display:flex;gap:.6rem;margin-bottom:.5rem">
-        <button id="cameraBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;font-size:.84rem;color:#2d1f17;font-weight:500">
-          <span style="font-size:1.1rem">📷</span> Take photo
-        </button>
-        <button id="galleryBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;font-size:.84rem;color:#2d1f17;font-weight:500">
-          <span style="font-size:1.1rem">🖼</span> Choose file
-        </button>
-      </div>
-      ${S.menuPreview?`<div style="position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:8px;object-fit:contain;display:block;border:1px solid #e8d8c8"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);color:white;border:none;cursor:pointer;font-size:.75rem;line-height:1">✕</button></div>`:''}
+      <div class="lbl">📷 Foto</div>
+      <button id="photoBtn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:.6rem;padding:.75rem 1rem;background:var(--warm-white);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--stone-dark);font-weight:500;transition:border-color .2s">
+        <span style="font-size:1.2rem">📷</span> Foto hinzufügen
+      </button>
+      ${S.menuPreview?`<div style="margin-top:.6rem;position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:10px;object-fit:contain;display:block;border:1px solid var(--border)"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.55);color:white;border:none;cursor:pointer;font-size:.8rem;line-height:1">✕</button></div>`:''}
     </div>
 
     <div style="margin-bottom:1rem">
@@ -605,7 +622,7 @@ function bindEvents(){
   on('mealType','change',e=>update({mealType:e.target.value}));
   on('dietStyle','change',e=>update({dietStyle:e.target.value}));
   on('extras','input',e=>{S.extras=e.target.value;});
-  on('dishName','input',e=>{S.dishName=e.target.value;}); // no re-render = no unfocus
+  on('dishName','input',e=>{S.dishName=e.target.value;});
   on('dishName','keydown',e=>{if(e.key==='Enter')doGenerate();});
   on('fridgeInput','input',e=>{S.fridgeInput=e.target.value;});
   on('fridgeInput','keydown',e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addFridgeItem();}});
@@ -620,22 +637,7 @@ function bindEvents(){
   on('menuText','input',e=>update({menuText:e.target.value,menuImageData:null,menuPreview:null,menuUrl:''}));
   on('analyzeMenuBtn','click',doAnalyzeMenu);
 
-  // Camera — use persistent hidden inputs that stay in DOM across re-renders
-  const handleImageFile = (file) => {
-    if(!file)return;
-    const mime=file.type||'image/jpeg';
-    const rd=new FileReader();
-    rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
-    rd.readAsDataURL(file);
-  };
-  // Wire persistent inputs once at startup (they never re-render)
-  if(!window._cameraInputBound){
-    window._cameraInputBound=true;
-    document.getElementById('cameraInputPersist').addEventListener('change',e=>{handleImageFile(e.target.files&&e.target.files[0]);e.target.value='';});
-    document.getElementById('galleryInputPersist').addEventListener('change',e=>{handleImageFile(e.target.files&&e.target.files[0]);e.target.value='';});
-  }
-  on('cameraBtn','click',()=>document.getElementById('cameraInputPersist').click());
-  on('galleryBtn','click',()=>document.getElementById('galleryInputPersist').click());
+  // Camera button — now handled via action sheet in initGlobalEvents
 
   // Paste zone
   const pz=document.getElementById('pasteZone');
@@ -653,23 +655,52 @@ function bindEvents(){
       }
     }
   });
+}
 
-  // Delegation
-  async function handleFavSave(i){
-    const r=S.favs[i];if(!r)return;
-    const name=document.getElementById(`favEditName_${i}`)?.value.trim()||r.name;
-    const prepTime=document.getElementById(`favEditPrep_${i}`)?.value.trim()||r.prepTime;
-    const cookTime=document.getElementById(`favEditCook_${i}`)?.value.trim()||r.cookTime;
-    const kidneyTip=document.getElementById(`favEditTip_${i}`)?.value.trim()||r.kidneyTip;
-    const notes=document.getElementById(`favEditNotes_${i}`)?.value.trim()??r.notes??'';
-    const instructions=(document.getElementById(`favEditInstr_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-    const ingredients=(document.getElementById(`favEditIngs_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-    S.favs[i]={...r,name,prepTime,cookTime,kidneyTip,notes,instructions,ingredients};
-    await apiSet('favourites',S.favs);
-    update({editingFav:null});
+// ── One-time global delegation (NOT inside bindEvents — must not re-register) ─
+async function handleFavSave(i){
+  const r=S.favs[i];if(!r)return;
+  const name=document.getElementById(`favEditName_${i}`)?.value.trim()||r.name;
+  const prepTime=document.getElementById(`favEditPrep_${i}`)?.value.trim()||r.prepTime;
+  const cookTime=document.getElementById(`favEditCook_${i}`)?.value.trim()||r.cookTime;
+  const kidneyTip=document.getElementById(`favEditTip_${i}`)?.value.trim()||r.kidneyTip;
+  const notes=document.getElementById(`favEditNotes_${i}`)?.value.trim()??r.notes??'';
+  const instructions=(document.getElementById(`favEditInstr_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const ingredients=(document.getElementById(`favEditIngs_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  S.favs[i]={...r,name,prepTime,cookTime,kidneyTip,notes,instructions,ingredients};
+  await apiSet('favourites',S.favs);
+  update({editingFav:null});
+}
+function initGlobalEvents(){
+  // Image file handler
+  function handleImageFile(file){
+    if(!file)return;
+    const mime=file.type||'image/jpeg';
+    const rd=new FileReader();
+    rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
+    rd.readAsDataURL(file);
   }
 
+  // Photo action sheet
+  const sheet=document.getElementById('photoSheet');
+  const openSheet=()=>{ sheet.style.display='block'; };
+  const closeSheet=()=>{ sheet.style.display='none'; };
+  document.getElementById('photoSheetBg').addEventListener('click',closeSheet);
+  document.getElementById('sheetCancelBtn').addEventListener('click',closeSheet);
+  document.getElementById('sheetCameraBtn').addEventListener('click',()=>{
+    closeSheet();
+    document.getElementById('camInputPersist').click();
+  });
+  document.getElementById('sheetGalleryBtn').addEventListener('click',()=>{
+    closeSheet();
+    document.getElementById('galleryInputPersist').click();
+  });
+  document.getElementById('camInputPersist').addEventListener('change',e=>{handleImageFile(e.target.files&&e.target.files[0]);e.target.value='';});
+  document.getElementById('galleryInputPersist').addEventListener('change',e=>{handleImageFile(e.target.files&&e.target.files[0]);e.target.value='';});
+
+  // photoBtn is re-rendered so bind via delegation below
   document.getElementById('app').addEventListener('click',e=>{
+    if(e.target.closest('#photoBtn')){openSheet();return;}
     const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle]')||e.target;
     if(t.dataset.tab)update({tab:t.dataset.tab});
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
@@ -831,6 +862,7 @@ Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+initGlobalEvents();
 (async function init(){
   const[status,profiles,favs]=await Promise.all([
     fetch(BASE+'rk/status').then(r=>r.json()).catch(()=>({configured:false})),
