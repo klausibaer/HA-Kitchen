@@ -114,11 +114,11 @@ const S={
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
-async function apiGet(key){try{const r=await fetch(`/api/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
-async function apiSet(key,value){try{await fetch(`/api/data/${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})});}catch{}}
+async function apiGet(key){try{const r=await fetch(`/rk/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
+async function apiSet(key,value){try{await fetch(`/rk/data/${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})});}catch{}}
 
 async function claudeRaw(messages,maxTokens){
-  const r=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:maxTokens||1200,messages})});
+  const r=await fetch('/rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:maxTokens||1200,messages})});
   const d=await r.json();
   if(!r.ok)throw new Error(d.error||'API error');
   return d.content.map(b=>b.text||'').join('');
@@ -321,12 +321,19 @@ function buildMenu(){
     <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Provide the menu — photo, screenshot, URL, or typed text. Rates every dish for kidney safety based on your active profile.</p>
     
     <div style="margin-bottom:1rem">
-      <div class="lbl">📷 Take a photo / choose image</div>
-      <label style="display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='#c4684a'" onmouseout="this.style.borderColor='#e8d8c8'">
-        <span style="font-size:1.3rem">📷</span>
-        <div><div style="font-size:.84rem;color:#2d1f17;font-weight:500">Camera / Photo library</div><div style="font-size:.72rem;color:#8a7060">Take a photo or pick from your gallery</div></div>
-        <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none"/>
-      </label>
+      <div class="lbl">📷 Photo</div>
+      <div style="display:flex;gap:.6rem">
+        <label style="flex:1;display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer">
+          <span style="font-size:1.2rem">📷</span>
+          <div><div style="font-size:.82rem;color:#2d1f17;font-weight:500">Take photo</div><div style="font-size:.7rem;color:#8a7060">Open camera</div></div>
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none"/>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer">
+          <span style="font-size:1.2rem">🖼</span>
+          <div><div style="font-size:.82rem;color:#2d1f17;font-weight:500">Choose image</div><div style="font-size:.7rem;color:#8a7060">Photo library</div></div>
+          <input id="galleryInput" type="file" accept="image/*" style="display:none"/>
+        </label>
+      </div>
       ${S.menuPreview?`<div style="margin-top:.6rem;position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:8px;object-fit:contain;display:block;border:1px solid #e8d8c8"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);color:white;border:none;cursor:pointer;font-size:.75rem;line-height:1">✕</button></div>`:''}
     </div>
 
@@ -498,18 +505,16 @@ function bindEvents(){
   on('menuText','input',e=>update({menuText:e.target.value,menuImageData:null,menuPreview:null,menuUrl:''}));
   on('analyzeMenuBtn','click',doAnalyzeMenu);
 
-  // Camera / file input
-  on('cameraInput','change',e=>{
-    const file=e.target.files&&e.target.files[0];
+  // Camera / file inputs
+  const handleImageFile = (file) => {
     if(!file)return;
     const mime=file.type||'image/jpeg';
     const rd=new FileReader();
-    rd.onload=ev=>{
-      const b64=ev.target.result.split(',')[1];
-      update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});
-    };
+    rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
     rd.readAsDataURL(file);
-  });
+  };
+  on('cameraInput','change',e=>handleImageFile(e.target.files&&e.target.files[0]));
+  on('galleryInput','change',e=>handleImageFile(e.target.files&&e.target.files[0]));
 
   // Paste zone
   const pz=document.getElementById('pasteZone');
@@ -646,7 +651,7 @@ Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned
     }else{
       messages=[{role:'user',content:`Menu text:\n${hasText}\n\n${instr}`}];
     }
-    const r=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages})});
+    const r=await fetch('/rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages})});
     const data=await r.json();
     if(!r.ok)throw new Error(data.error||'API error');
     const txt=data.content.map(b=>b.text||'').join('');
@@ -657,7 +662,7 @@ Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init(){
   const[status,profile,favs]=await Promise.all([
-    fetch('/api/status').then(r=>r.json()).catch(()=>({configured:false})),
+    fetch('/rk/status').then(r=>r.json()).catch(()=>({configured:false})),
     apiGet('profile'),
     apiGet('favourites'),
   ]);
