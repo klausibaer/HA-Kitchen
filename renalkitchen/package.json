@@ -1,0 +1,10 @@
+{
+  "name": "renalkitchen",
+  "version": "1.0.0",
+  "description": "RenalKitchen HA Addon server",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  }
+}
