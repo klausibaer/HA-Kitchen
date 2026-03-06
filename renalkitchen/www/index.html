@@ -113,14 +113,21 @@ const S={
   swapState:{},servingOverrides:{},
 };
 
+// ── Base URL (works under HA Ingress regardless of trailing slash) ─────────────
+const BASE=(()=>{const p=window.location.pathname;return p.endsWith('/')?p:p+'/';})();
+
 // ── API ───────────────────────────────────────────────────────────────────────
-async function apiGet(key){try{const r=await fetch(`/rk/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
-async function apiSet(key,value){try{await fetch(`/rk/data/${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})});}catch{}}
+async function apiGet(key){try{const r=await fetch(BASE+`rk/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
+async function apiSet(key,value){try{await fetch(BASE+`rk/data/${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})});}catch{}}
 
 async function claudeRaw(messages,maxTokens){
-  const r=await fetch('/rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:maxTokens||1200,messages})});
+  const r=await fetch(BASE+'rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:maxTokens||1200,messages})});
+  if(!r.ok){
+    let msg='Server error '+r.status;
+    try{const d=await r.json();msg=d.error||msg;}catch{try{msg=await r.text();}catch{}}
+    throw new Error(msg);
+  }
   const d=await r.json();
-  if(!r.ok)throw new Error(d.error||'API error');
   return d.content.map(b=>b.text||'').join('');
 }
 
@@ -322,19 +329,24 @@ function buildMenu(){
     
     <div style="margin-bottom:1rem">
       <div class="lbl">📷 Photo</div>
-      <div style="display:flex;gap:.6rem">
-        <label style="flex:1;display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer">
-          <span style="font-size:1.2rem">📷</span>
-          <div><div style="font-size:.82rem;color:#2d1f17;font-weight:500">Take photo</div><div style="font-size:.7rem;color:#8a7060">Open camera</div></div>
-          <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none"/>
-        </label>
-        <label style="flex:1;display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer">
-          <span style="font-size:1.2rem">🖼</span>
-          <div><div style="font-size:.82rem;color:#2d1f17;font-weight:500">Choose image</div><div style="font-size:.7rem;color:#8a7060">Photo library</div></div>
+      <div style="display:flex;gap:.6rem;margin-bottom:.5rem">
+        <button id="openCameraBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;font-size:.84rem;color:#2d1f17;font-weight:500">
+          <span style="font-size:1.1rem">📷</span> Take photo
+        </button>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem .9rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;font-size:.84rem;color:#2d1f17;font-weight:500">
+          <span style="font-size:1.1rem">🖼</span> Choose file
           <input id="galleryInput" type="file" accept="image/*" style="display:none"/>
         </label>
       </div>
-      ${S.menuPreview?`<div style="margin-top:.6rem;position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:8px;object-fit:contain;display:block;border:1px solid #e8d8c8"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);color:white;border:none;cursor:pointer;font-size:.75rem;line-height:1">✕</button></div>`:''}
+      <div id="cameraView" style="display:none;flex-direction:column;gap:.5rem;margin-bottom:.5rem">
+        <video id="cameraVideo" autoplay playsinline style="width:100%;border-radius:8px;border:1px solid #e8d8c8;max-height:260px;object-fit:cover;background:#000"></video>
+        <div style="display:flex;gap:.5rem">
+          <button id="snapBtn" style="flex:2;padding:.6rem;background:#c4684a;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:500;font-size:.9rem">📸 Capture</button>
+          <button id="closeCameraBtn" style="flex:1;padding:.6rem;background:white;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;color:#8a7060;font-size:.85rem">Cancel</button>
+        </div>
+      </div>
+      <canvas id="snapCanvas" style="display:none"></canvas>
+      ${S.menuPreview?`<div style="position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:8px;object-fit:contain;display:block;border:1px solid #e8d8c8"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);color:white;border:none;cursor:pointer;font-size:.75rem;line-height:1">✕</button></div>`:''}
     </div>
 
     <div style="margin-bottom:1rem">
@@ -505,7 +517,7 @@ function bindEvents(){
   on('menuText','input',e=>update({menuText:e.target.value,menuImageData:null,menuPreview:null,menuUrl:''}));
   on('analyzeMenuBtn','click',doAnalyzeMenu);
 
-  // Camera / file inputs
+  // Camera via getUserMedia + gallery file input
   const handleImageFile = (file) => {
     if(!file)return;
     const mime=file.type||'image/jpeg';
@@ -513,8 +525,45 @@ function bindEvents(){
     rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
     rd.readAsDataURL(file);
   };
-  on('cameraInput','change',e=>handleImageFile(e.target.files&&e.target.files[0]));
   on('galleryInput','change',e=>handleImageFile(e.target.files&&e.target.files[0]));
+
+  let cameraStream=null;
+  on('openCameraBtn','click',async()=>{
+    const view=document.getElementById('cameraView');
+    const video=document.getElementById('cameraVideo');
+    if(!view||!video)return;
+    try{
+      cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+      video.srcObject=cameraStream;
+      view.style.display='flex';
+    }catch(err){
+      // fallback to file input with capture
+      const inp=document.createElement('input');
+      inp.type='file';inp.accept='image/*';inp.capture='environment';
+      inp.onchange=e=>handleImageFile(e.target.files&&e.target.files[0]);
+      inp.click();
+    }
+  });
+  on('closeCameraBtn','click',()=>{
+    if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());
+    cameraStream=null;
+    const view=document.getElementById('cameraView');
+    if(view)view.style.display='none';
+  });
+  on('snapBtn','click',()=>{
+    const video=document.getElementById('cameraVideo');
+    const canvas=document.getElementById('snapCanvas');
+    if(!video||!canvas)return;
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    canvas.getContext('2d').drawImage(video,0,0);
+    const dataUrl=canvas.toDataURL('image/jpeg',0.9);
+    const b64=dataUrl.split(',')[1];
+    if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());
+    cameraStream=null;
+    const view=document.getElementById('cameraView');
+    if(view)view.style.display='none';
+    update({menuImageData:b64,menuImageMime:'image/jpeg',menuPreview:dataUrl,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});
+  });
 
   // Paste zone
   const pz=document.getElementById('pasteZone');
@@ -651,7 +700,7 @@ Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned
     }else{
       messages=[{role:'user',content:`Menu text:\n${hasText}\n\n${instr}`}];
     }
-    const r=await fetch('/rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages})});
+    const r=await fetch(BASE+'rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages})});
     const data=await r.json();
     if(!r.ok)throw new Error(data.error||'API error');
     const txt=data.content.map(b=>b.text||'').join('');
@@ -662,7 +711,7 @@ Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init(){
   const[status,profile,favs]=await Promise.all([
-    fetch('/rk/status').then(r=>r.json()).catch(()=>({configured:false})),
+    fetch(BASE+'rk/status').then(r=>r.json()).catch(()=>({configured:false})),
     apiGet('profile'),
     apiGet('favourites'),
   ]);
