@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RenalKitchen</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#fdf6ee;color:#2d1f17}
+button,input,select,textarea{font-family:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:40px;height:40px;border:3px solid #e8d8c8;border-top-color:#c4684a;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 1rem}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a7060' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.7rem center;background-color:#fffaf5;padding-right:2rem}
+.card{background:white;border:1px solid #e8d8c8;border-radius:16px;padding:1.4rem;margin-bottom:1rem;box-shadow:0 2px 16px rgba(92,61,46,0.05)}
+.lbl{font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:#8a7060;margin-bottom:.38rem}
+.field{width:100%;padding:.58rem .8rem;border:1.5px solid #e8d8c8;border-radius:8px;font-size:.87rem;color:#2d1f17;background:#fffaf5;outline:none}
+.field:focus{border-color:#c4684a}
+.btn-main{width:100%;padding:.95rem;background:#c4684a;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:500;cursor:pointer;transition:background .2s}
+.btn-main:disabled{background:#d9a090;cursor:not-allowed}
+.btn-main:hover:not(:disabled){background:#b05a3e}
+.pill{padding:.35rem .8rem;border:1.5px solid #e8d8c8;border-radius:999px;font-size:.78rem;cursor:pointer;background:white;color:#8a7060;transition:all .15s}
+.pill.active{background:#c4684a;border-color:#c4684a;color:white;font-weight:500}
+.tab{padding:.5rem 1.1rem;border:1.5px solid #e8d8c8;border-radius:999px;font-size:.85rem;cursor:pointer;background:white;color:#8a7060;transition:all .15s}
+.tab.active{background:#c4684a;border-color:#c4684a;color:white;font-weight:500}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.5rem .85rem;background:#fffaf5;border:1.5px solid #e8d8c8;border-radius:8px;cursor:pointer;gap:1rem;transition:all .15s}
+.toggle-row.on{background:#f0f8f1;border-color:#7a9e7e}
+.toggle-track{width:36px;height:20px;border-radius:999px;background:#e8d8c8;position:relative;flex-shrink:0;transition:background .2s}
+.toggle-track.on{background:#7a9e7e}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:white;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.toggle-thumb.on{left:19px}
+.sec-title{display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;font-family:Georgia,serif;font-size:1rem;color:#5c3d2e}
+.sec-title::after{content:'';flex:1;height:1px;background:#e8d8c8}
+.stepper{display:flex;align-items:center;border:1.5px solid #e8d8c8;border-radius:8px;overflow:hidden;background:#fffaf5;height:40px}
+.stepper button{width:38px;height:100%;border:none;background:none;cursor:pointer;font-size:1.2rem;color:#8a7060}
+.stepper-val{flex:1;text-align:center;font-weight:500;font-size:.92rem;color:#2d1f17;border-left:1px solid #e8d8c8;border-right:1px solid #e8d8c8;height:100%;display:flex;align-items:center;justify-content:center}
+.recipe-card{background:white;border:1px solid #e8d8c8;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(92,61,46,0.05);margin-bottom:1.25rem}
+.recipe-head{background:linear-gradient(135deg,#fff5ee,#fef9f5);padding:1.2rem 1.4rem .9rem;border-bottom:1px solid #e8d8c8}
+.nut-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1rem}
+.nut-box{background:#fdf6ee;border-radius:8px;padding:.55rem;text-align:center}
+.nut-val{font-family:Georgia,serif;font-size:.98rem;font-weight:600;color:#5c3d2e}
+.nut-val.scaled{color:#c4684a}
+.nut-key{font-size:.66rem;text-transform:uppercase;letter-spacing:.5px;color:#8a7060;margin-top:2px}
+.ing-list{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:.35rem 1rem;margin-bottom:1.2rem}
+.ing-item{font-size:.86rem;line-height:1.45}
+.kidney-tip{background:linear-gradient(135deg,#f0f8f1,#e8f4ea);border:1px solid #b8dbbe;border-radius:10px;padding:.8rem 1rem;font-size:.82rem;color:#4a7a55;line-height:1.5;display:flex;gap:.5rem;align-items:flex-start}
+.error-box{background:#fff3f0;border:1px solid #f5c4b8;border-radius:10px;padding:.9rem 1.1rem;color:#c04a30;font-size:.86rem;margin-bottom:1rem}
+.info-box{background:linear-gradient(135deg,#f0f8f1,#e8f4ea);border:1px solid #b8dbbe;border-radius:12px;padding:.9rem 1rem;margin-bottom:1rem}
+.adapt-banner{background:linear-gradient(135deg,#f4f9fc,#eaf3f8);border:1px solid #a0c4d8;border-radius:12px 12px 0 0;padding:.75rem 1rem;border-bottom:none;margin-bottom:-2px;position:relative;z-index:1}
+.fridge-banner{background:linear-gradient(135deg,#f0f8f1,#e8f4ea);border:1px solid #b8dbbe;border-radius:12px 12px 0 0;padding:.6rem 1.1rem;font-size:.8rem;color:#4a7a55;border-bottom:none;margin-bottom:-2px;position:relative;z-index:1}
+.dish-item{background:white;border:1px solid #e8d8c8;border-radius:12px;overflow:hidden;margin-bottom:.6rem}
+.dish-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem}
+.dish-body{padding:.65rem .9rem}
+.swap-opts{margin-left:1.1rem;margin-top:.4rem;padding:.6rem;background:#e8f0f5;border:1px solid #c5dcec;border-radius:8px}
+.fav-badge{font-size:.72rem;color:#8a7060;padding:.2rem .6rem;background:#fdf6ee;border:1px solid #e8d8c8;border-radius:8px 8px 0 0;display:inline-block}
+.no-key-banner{background:#fff5dc;border:1.5px solid #e0c870;border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;font-size:.84rem;color:#7a5c00;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#8a7060">Loading&#8230;</div></div>
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+const S={
+  ready:false,configured:false,
+  tab:'generate',mode:'generate',
+  mealType:'any',dietStyle:'omnivore',servings:2,count:1,
+  potassium:'moderate',phosphorus:'moderate',sodium:'moderate',
+  calcium:'none',fluid:'none',protein:'moderate',
+  oxalate:'none',purine:'none',
+  heartHealthy:false,diabetic:false,glutenFree:false,
+  extras:'',units:'metric',preset:null,settingsSaved:false,
+  loading:false,error:'',
+  recipes:[],favs:[],favLoaded:false,
+  fridgeItems:[],fridgeInput:'',
+  dishName:'',
+  menuUrl:'',menuImage:null,menuPreview:null,menuText:'',
+  menuAnalysis:null,menuLoading:false,menuError:'',
+  swapState:{},servingOverrides:{},
+};
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+async function apiGet(key){
+  try{const r=await fetch(`/api/data/${key}`);const d=await r.json();return d.value;}
+  catch{return null;}
+}
+async function apiSet(key,value){
+  try{await fetch(`/api/data/${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})});}
+  catch{}
+}
+async function claude(messages,maxTokens){
+  const r=await fetch('/api/claude',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({max_tokens:maxTokens||1200,messages})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error(d.error||'API error');
+  return d.content.map(b=>b.text||'').join('');
+}
+function parseJSON(txt){return JSON.parse(txt.replace(/```json|```/g,'').trim());}
+
+// ── Scaling ───────────────────────────────────────────────────────────────────
+const VULG={'\u215B':1/8,'\u00BC':1/4,'\u2153':1/3,'\u215C':3/8,'\u00BD':1/2,'\u215D':5/8,'\u2154':2/3,'\u00BE':3/4,'\u215E':7/8};
+function parseFrac(s){const p=s.match(/^(\d+)\s*\/\s*(\d+)$/);if(p)return+p[1]/+p[2];if(VULG[s]!==undefined)return VULG[s];const m=s.match(/^(\d+)(.)$/);if(m&&VULG[m[2]]!==undefined)return+m[1]+VULG[m[2]];return parseFloat(s);}
+function fmtNum(n){if(n<=0)return'0';const fr=[[1/8,'\u215B'],[1/4,'\u00BC'],[1/3,'\u2153'],[3/8,'\u215C'],[1/2,'\u00BD'],[5/8,'\u215D'],[2/3,'\u2154'],[3/4,'\u00BE'],[7/8,'\u215E']];const w=Math.floor(n),f=n-w;if(f<0.04)return w===0?'':String(w);for(const[v,sym]of fr)if(Math.abs(f-v)<0.07)return w>0?w+sym:sym;return String(Math.round(n*10)/10);}
+function scaleIng(ing,ratio){if(!ing||ratio===1)return ing;return ing.replace(/(\d+\s*\/\s*\d+|\d+[^\w\s]|[^\w\s\d]|\d*\.?\d+)(?:\s*[-\u2013]\s*(\d+\s*\/\s*\d+|\d+[^\w\s]|[^\w\s\d]|\d*\.?\d+))?/g,(m,n1,n2)=>{const v1=parseFrac(n1.trim());if(isNaN(v1)||v1===0)return m;const s1=fmtNum(v1*ratio);if(n2!==undefined){const v2=parseFrac(n2.trim());if(!isNaN(v2)&&v2>0)return s1+'-'+fmtNum(v2*ratio);}return s1;});}
+function scaleNut(v,ratio){const n=parseFloat(v);return isNaN(n)?v:v.replace(/[\d.]+/,Math.round(n*ratio));}
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+const PRESETS={
+  ckd_early:{potassium:'moderate',phosphorus:'moderate',sodium:'moderate',calcium:'none',fluid:'none',protein:'low',oxalate:'none',purine:'none',heartHealthy:true,diabetic:false,glutenFree:false},
+  ckd_late:{potassium:'low',phosphorus:'low',sodium:'moderate',calcium:'moderate',fluid:'moderate',protein:'low',oxalate:'none',purine:'none',heartHealthy:true,diabetic:false,glutenFree:false},
+  hemo:{potassium:'low',phosphorus:'low',sodium:'low',calcium:'moderate',fluid:'strict',protein:'high',oxalate:'none',purine:'none',heartHealthy:true,diabetic:false,glutenFree:false},
+  peri:{potassium:'moderate',phosphorus:'low',sodium:'low',calcium:'moderate',fluid:'moderate',protein:'high',oxalate:'none',purine:'none',heartHealthy:true,diabetic:false,glutenFree:false},
+  stones_c:{potassium:'none',phosphorus:'none',sodium:'moderate',calcium:'moderate',fluid:'none',protein:'moderate',oxalate:'low',purine:'none',heartHealthy:false,diabetic:false,glutenFree:false},
+  stones_u:{potassium:'none',phosphorus:'none',sodium:'moderate',calcium:'none',fluid:'none',protein:'moderate',oxalate:'none',purine:'low',heartHealthy:false,diabetic:false,glutenFree:false},
+  transplant:{potassium:'moderate',phosphorus:'moderate',sodium:'moderate',calcium:'moderate',fluid:'none',protein:'moderate',oxalate:'none',purine:'none',heartHealthy:true,diabetic:true,glutenFree:false},
+};
+const PRESET_LABELS=[['ckd_early','Early CKD (1-3)'],['ckd_late','Late CKD (4-5)'],['hemo','Haemodialysis'],['peri','Peritoneal Dialysis'],['stones_c','Calcium Oxalate Stones'],['stones_u','Uric Acid Stones'],['transplant','Post-Transplant']];
+const NUT_LABELS={calories:'Calories',protein:'Protein',potassium:'Potassium',phosphorus:'Phosphorus',sodium:'Sodium',calcium:'Calcium',fluid:'Fluid'};
+const SAFETY={safe:{bg:'#f0f8f1',bo:'#b8dbbe',tc:'#4a7a55',lbl:'&#10003; Safe'},caution:{bg:'#fdf5dc',bo:'#e0c870',tc:'#8a6020',lbl:'&#9888; Changes'},avoid:{bg:'#fff3f0',bo:'#f5c4b8',tc:'#c04a30',lbl:'&#10007; Avoid'}};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function rText(){const l=[S.heartHealthy?'heart-healthy':'',S.diabetic?'diabetic-friendly':'',S.glutenFree?'gluten-free':''].filter(Boolean).join(', ');return `Potassium:${S.potassium},Phosphorus:${S.phosphorus},Sodium:${S.sodium},Calcium:${S.calcium},Fluid:${S.fluid},Protein:${S.protein},Oxalate:${S.oxalate},Purine:${S.purine}${l?','+l:''}`;}
+function nutShape(){return `"calories":"320","protein":"22g","potassium":"250mg","phosphorus":"180mg","sodium":"280mg","calcium":"80mg"`+(S.fluid!=='none'?`,"fluid":"180ml"`:'');}
+function extrasStr(){return [S.heartHealthy?'heart-healthy low saturated fat':'',S.diabetic?'diabetic-friendly low glycaemic':'',S.glutenFree?'gluten-free':'',S.extras].filter(Boolean).join(', ')||'none';}
+function unitStr(){return S.units==='metric'?'metric (g,ml,kg)':'imperial (oz,lbs,cups,fl oz)';}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function isFav(r){return S.favs.some(f=>f.name===r.name);}
+function opts(pairs,sel){return pairs.map(([v,l])=>`<option value="${v}"${v===sel?' selected':''}>${l}</option>`).join('');}
+function toggleRow(id,label,sub,on){return `<div class="toggle-row${on?' on':''}" data-toggle="${id}"><div><div style="font-size:.84rem;color:#2d1f17">${label}</div><div style="font-size:.7rem;color:#8a7060;margin-top:2px">${sub}</div></div><div class="toggle-track${on?' on':''}"><div class="toggle-thumb${on?' on':''}"></div></div></div>`;}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(){document.getElementById('app').innerHTML=buildApp();bindEvents();}
+function update(changes){Object.assign(S,changes);render();}
+
+function buildApp(){
+  if(!S.ready)return`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#8a7060">Loading&#8230;</div>`;
+  const noKey=!S.configured?`<div class="no-key-banner">&#9888; <strong>Anthropic API key not set.</strong> Go to <strong>Settings &#8594; Add-ons &#8594; RenalKitchen &#8594; Configuration</strong> and enter your key from <em>console.anthropic.com</em>, then restart the addon.</div>`:'';
+  const favCount=S.favs.length>0?`<span style="background:${S.tab==='favourites'?'rgba(255,255,255,.3)':'#c4684a'};color:white;border-radius:999px;font-size:.65rem;padding:.1rem .4rem;font-weight:600;margin-left:.3rem">${S.favs.length}</span>`:'';
+  return `<div style="background:#fdf6ee;min-height:100vh">
+  <div style="padding:1.2rem 1rem .9rem;border-bottom:1px solid #e8d8c8;background:linear-gradient(180deg,#fff8f0,transparent);text-align:center">
+    <div style="display:inline-flex;align-items:center;gap:.5rem;margin-bottom:.25rem">
+      <div style="width:26px;height:26px;background:#c4684a;border-radius:50% 50% 50% 20%;display:flex;align-items:center;justify-content:center;font-size:.85rem">&#129752;</div>
+      <span style="font-family:Georgia,serif;font-size:.95rem;color:#5c3d2e;font-weight:600">RenalKitchen</span>
+    </div>
+    <h1 style="font-family:Georgia,serif;font-size:clamp(1.3rem,4vw,1.9rem);color:#5c3d2e;line-height:1.15;margin:0">Recipes for <em style="color:#c4684a">Healthier</em> Kidneys</h1>
+  </div>
+  <div style="max-width:880px;margin:0 auto;padding:1.2rem 1rem 3rem">
+    ${noKey}
+    <div style="display:flex;gap:.5rem;margin-bottom:1rem;justify-content:center;flex-wrap:wrap">
+      <button class="tab${S.tab==='generate'?' active':''}" data-tab="generate">Generate</button>
+      <button class="tab${S.tab==='menu'?' active':''}" data-tab="menu">Menu</button>
+      <button class="tab${S.tab==='favourites'?' active':''}" data-tab="favourites">Favourites${favCount}</button>
+    </div>
+    ${S.tab==='favourites'?buildFavs():S.tab==='menu'?buildMenu():buildGenerate()}
+    <div style="text-align:center;padding-top:1.5rem;font-size:.74rem;color:#8a7060;border-top:1px solid #e8d8c8;margin-top:1rem">
+      Always consult your nephrologist or registered renal dietitian. Nutritional values are estimates only.
+    </div>
+  </div>
+</div>`;
+}
+
+// ── Favourites ────────────────────────────────────────────────────────────────
+function buildFavs(){
+  if(!S.favLoaded)return`<div style="text-align:center;padding:2rem;color:#8a7060">Loading&#8230;</div>`;
+  if(!S.favs.length)return`<div class="card"><div style="text-align:center;padding:1.5rem"><div style="font-size:2rem;margin-bottom:.75rem">&#9734;</div><div style="font-family:Georgia,serif;font-size:1.1rem;color:#5c3d2e;margin-bottom:.4rem">No favourites yet</div><div style="font-size:.84rem;color:#8a7060">Generate recipes and tap &#9734; to save here.</div></div></div>`;
+  return`<div><div style="margin-bottom:1rem;padding-bottom:.7rem;border-bottom:1px solid #e8d8c8"><div style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;color:#4a7a55;font-weight:500;margin-bottom:.2rem">${S.favs.length} saved recipe${S.favs.length>1?'s':''} &#8212; stored in Home Assistant</div><div style="font-family:Georgia,serif;font-size:1.45rem;color:#5c3d2e">Your favourite recipes</div></div>${S.favs.map((r,i)=>`<div><div style="display:flex;justify-content:flex-end;margin-bottom:-.5rem;position:relative;z-index:2"><span class="fav-badge">Saved ${esc(r.savedAt)}</span></div>${buildRecipeCard(r,'fav',i)}</div>`).join('')}</div>`;
+}
+
+// ── Menu ──────────────────────────────────────────────────────────────────────
+function buildMenu(){
+  const hasInput=S.menuUrl.trim()||S.menuImage||S.menuText.trim();
+  return`<div><div class="card"><div class="sec-title">Restaurant menu analyser</div>
+    <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Provide the menu in any way below. Rates every dish for kidney safety.</p>
+    <div style="margin-bottom:1rem"><div class="lbl">Option 1 &#8212; image URL</div>
+      <div style="display:flex;gap:.5rem"><input id="menuUrl" class="field" style="flex:1" value="${esc(S.menuUrl)}" placeholder="https://example.com/menu.jpg"/>
+      ${S.menuUrl?`<button id="clearMenuUrl" style="padding:0 .7rem;border:1px solid #e8d8c8;background:white;border-radius:8px;cursor:pointer;color:#8a7060">&#10005;</button>`:''}</div></div>
+    <div style="margin-bottom:1rem"><div class="lbl">Option 2 &#8212; paste screenshot (Ctrl+V / &#8984;V)</div>
+      <div id="pasteZone" tabindex="0" style="padding:1rem;border:2px dashed ${S.menuPreview?'#7a9e7e':'#e8d8c8'};border-radius:10px;text-align:center;cursor:text;background:${S.menuPreview?'#f0f8f1':'#fffaf5'}">
+        ${S.menuPreview?`<img src="${S.menuPreview}" style="max-width:100%;max-height:200px;border-radius:8px;object-fit:contain;display:block;margin:0 auto .4rem"/><div style="font-size:.75rem;color:#4a7a55">&#10003; Pasted &#8212; click here and paste again to replace</div>`:`<div style="font-size:1.5rem;margin-bottom:.3rem">&#128203;</div><div style="font-size:.84rem;color:#2d1f17;font-weight:500">Click here, then Ctrl+V / &#8984;V</div><div style="font-size:.74rem;color:#8a7060;margin-top:.2rem">Works with screenshots or photos</div>`}
+      </div></div>
+    <div style="margin-bottom:1rem"><div class="lbl">Option 3 &#8212; type or paste menu text</div>
+      <textarea id="menuText" rows="5" class="field" style="resize:vertical;line-height:1.5" placeholder="Starters:\n- Caesar Salad\nMains:\n- Grilled salmon">${esc(S.menuText)}</textarea></div>
+    ${hasInput?`<button class="btn-main" id="analyzeMenuBtn" ${S.menuLoading?'disabled':''}>${S.menuLoading?'Analysing&#8230;':'Analyse menu for my restrictions'}</button>`:''}
+  </div>
+  ${S.menuError?`<div class="error-box">${esc(S.menuError)}</div>`:''}
+  ${S.menuLoading?`<div style="text-align:center;padding:2rem"><div class="spinner"></div><p style="font-family:Georgia,serif;font-style:italic;color:#8a7060">Reading the menu&#8230;</p></div>`:''}
+  ${S.menuAnalysis?buildMenuResults():''}
+  </div>`;
+}
+
+function buildMenuResults(){
+  const ma=S.menuAnalysis;
+  return`<div><div style="margin-bottom:1rem;padding-bottom:.7rem;border-bottom:1px solid #e8d8c8"><div style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;color:#4a7a55;font-weight:500;margin-bottom:.2rem">${esc(ma.restaurantType||'')}</div><div style="font-family:Georgia,serif;font-size:1.35rem;color:#5c3d2e">Menu recommendations</div></div>
+  ${ma.generalTips?.length?`<div class="info-box"><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;font-weight:600;color:#4a7a55;margin-bottom:.5rem">General tips</div>${ma.generalTips.map(t=>`<div style="font-size:.83rem;color:#4a7a55;line-height:1.5;margin-bottom:.3rem">&#183; ${esc(t)}</div>`).join('')}</div>`:''}
+  <div style="display:flex;gap:.6rem;margin-bottom:.85rem;flex-wrap:wrap">${Object.entries(SAFETY).map(([,v])=>`<div style="padding:.25rem .6rem;background:${v.bg};border:1px solid ${v.bo};border-radius:999px;font-size:.74rem;color:${v.tc};font-weight:500">${v.lbl}</div>`).join('')}</div>
+  ${(ma.dishes||[]).map(dish=>{const cfg=SAFETY[dish.safetyRating]||{bg:'#fdf6ee',bo:'#e8d8c8',tc:'#8a7060',lbl:'?'};return`<div class="dish-item"><div class="dish-head" style="background:${cfg.bg};border-bottom:1px solid ${cfg.bo}"><span style="font-weight:700;font-size:.75rem;color:${cfg.tc};padding:.15rem .5rem;background:white;border-radius:999px;border:1px solid ${cfg.bo};flex-shrink:0">${cfg.lbl}</span><span style="font-weight:600;font-size:.88rem;color:#5c3d2e;flex:1">${esc(dish.name)}</span></div><div class="dish-body"><p style="font-size:.82rem;color:#2d1f17;margin:0 0 .5rem;line-height:1.45">${esc(dish.safetyReason)}</p>${dish.omissions?.length?`<div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;font-weight:600;color:#4a7a9b;margin-bottom:.3rem">Ask the kitchen to:</div>${dish.omissions.map(o=>`<div style="display:flex;gap:.4rem;font-size:.81rem;color:#2d1f17;margin-bottom:.2rem"><span style="color:#4a7a9b;flex-shrink:0">&#8594;</span><span>${esc(o)}</span></div>`).join('')}`:''}</div></div>`;}).join('')}
+  <div style="text-align:center;padding:1rem 0 0;font-size:.73rem;color:#8a7060">Always inform restaurant staff of your dietary requirements.</div></div>`;
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+function buildGenerate(){
+  const genLabel=S.loading?'Crafting&#8230;':S.mode==='fridge'?`Generate from ${S.fridgeItems.length} ingredient${S.fridgeItems.length!==1?'s':''}`:S.mode==='adapt'?`Adapt &#8220;${esc(S.dishName.trim()||'your dish')}&#8221;`:'Generate Kidney-Friendly Recipes';
+  return`<div>
+  <div style="display:flex;gap:.5rem;margin-bottom:1rem;justify-content:center;flex-wrap:wrap">
+    <button class="pill${S.mode==='generate'?' active':''}" data-mode="generate">Generate</button>
+    <button class="pill${S.mode==='fridge'?' active':''}" data-mode="fridge">Use what I have</button>
+    <button class="pill${S.mode==='adapt'?' active':''}" data-mode="adapt">Adapt a dish</button>
+  </div>
+  ${S.mode==='fridge'?`<div class="card" style="border:2px solid #e8937a;background:linear-gradient(135deg,#fff8f4,white)"><div class="sec-title">What&#8217;s in your fridge?</div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.6rem"><input id="fridgeInput" class="field" style="flex:1" value="${esc(S.fridgeInput)}" placeholder="Type ingredient, press Enter"/><button id="fridgeAddBtn" style="padding:0 1rem;background:#c4684a;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:500">Add</button></div>
+    ${S.fridgeItems.length?`<div style="display:flex;flex-wrap:wrap;gap:.4rem">${S.fridgeItems.map((item,i)=>`<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .65rem;background:#fff5ee;border:1.5px solid #e8937a;border-radius:999px;font-size:.8rem;color:#5c3d2e">${esc(item)}<button data-removefridge="${i}" style="border:none;background:none;cursor:pointer;color:#8a7060;font-size:.8rem;line-height:1;padding:0">&times;</button></span>`).join('')}<button id="clearFridgeBtn" style="border:1px solid #e8d8c8;background:none;border-radius:999px;padding:.28rem .65rem;font-size:.75rem;cursor:pointer;color:#8a7060">Clear all</button></div><div style="margin-top:.75rem;padding:.6rem .85rem;background:#f0f8f1;border:1px solid #b8dbbe;border-radius:8px;font-size:.8rem;color:#4a7a55">${S.fridgeItems.length} ingredient${S.fridgeItems.length!==1?'s':''} added</div>`:''}
+  </div>`:''}
+  ${S.mode==='adapt'?`<div class="card" style="border:2px solid #a0c4d8;background:linear-gradient(135deg,#f4f9fc,white)"><div class="sec-title">Which dish to adapt?</div>
+    <input id="dishName" class="field" style="font-size:.95rem;padding:.75rem 1rem;border-color:#a0c4d8" value="${esc(S.dishName)}" placeholder="e.g. Lasagne, Chicken Tikka Masala, Ramen&#8230;"/>
+    ${S.dishName.trim()?`<div style="margin-top:.7rem;padding:.55rem .85rem;background:#e8f0f5;border:1px solid #c5dcec;border-radius:8px;font-size:.8rem;color:#4a7a9b">Will adapt <strong>${esc(S.dishName.trim())}</strong> to your active restrictions</div>`:''}
+  </div>`:''}
+  <div class="card"><div class="sec-title">Patient profile</div>
+    <div style="background:linear-gradient(135deg,#fff5ee,#fff0e8);border:1.5px solid #e8937a;border-radius:12px;padding:.85rem 1.1rem;margin-bottom:1.2rem">
+      <div style="font-size:.69rem;text-transform:uppercase;letter-spacing:.8px;color:#c4684a;font-weight:600;margin-bottom:.5rem">Quick presets</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem">${PRESET_LABELS.map(([k,l])=>`<button class="pill${S.preset===k?' active':''}" data-preset="${k}">${l}</button>`).join('')}</div>
+    </div>
+    <div class="sec-title">Meal basics</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div><div class="lbl">Meal type</div><select id="mealType" class="field">${opts([['any','Any'],['breakfast','Breakfast'],['lunch','Lunch'],['dinner','Dinner'],['snack','Snack'],['soup','Soup/Stew'],['salad','Salad']],S.mealType)}</select></div>
+      <div><div class="lbl">Dietary style</div><select id="dietStyle" class="field">${opts([['omnivore','Omnivore'],['vegetarian','Vegetarian'],['vegan','Vegan'],['pescatarian','Pescatarian']],S.dietStyle)}</select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div><div class="lbl">Servings</div><div class="stepper"><button data-stepper="servings" data-dir="-1">-</button><div class="stepper-val">${S.servings}</div><button data-stepper="servings" data-dir="1">+</button></div></div>
+      <div><div class="lbl">How many recipes?</div><div style="display:flex;gap:.5rem;margin-top:.25rem">${[1,2,3].map(n=>`<button class="pill${S.count===n?' active':''}" data-count="${n}">${n}</button>`).join('')}</div></div>
+    </div>
+    <div><div class="lbl">Units</div><div style="display:flex;gap:.5rem">${[['metric','Metric (g, ml)'],['imperial','Imperial (oz, cups)']].map(([k,l])=>`<button style="flex:1;padding:.5rem;border:1.5px solid ${S.units===k?'#c4684a':'#e8d8c8'};border-radius:8px;font-size:.82rem;cursor:pointer;background:${S.units===k?'#fff5ee':'white'};color:${S.units===k?'#c4684a':'#8a7060'};font-weight:${S.units===k?600:400}" data-units="${k}">${l}</button>`).join('')}</div></div>
+  </div>
+  <div class="card"><div class="sec-title">Mineral &amp; electrolyte restrictions</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div><div class="lbl">Potassium</div><select id="potassium" class="field">${opts([['none','None'],['moderate','Moderate'],['low','Low'],['very_low','Very low']],S.potassium)}</select></div>
+      <div><div class="lbl">Phosphorus</div><select id="phosphorus" class="field">${opts([['none','None'],['moderate','Moderate'],['low','Low']],S.phosphorus)}</select></div>
+      <div><div class="lbl">Sodium</div><select id="sodium" class="field">${opts([['none','None'],['moderate','Moderate'],['low','Low']],S.sodium)}</select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div><div class="lbl">Calcium</div><select id="calcium" class="field">${opts([['none','None'],['moderate','Moderate'],['low','Low']],S.calcium)}</select></div>
+      <div><div class="lbl">Fluid</div><select id="fluid" class="field">${opts([['none','None'],['moderate','Max 1.5L/day'],['strict','Max 750ml/day']],S.fluid)}</select></div>
+    </div>
+  </div>
+  <div class="card"><div class="sec-title">Protein &amp; metabolic</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div><div class="lbl">Protein</div><select id="protein" class="field">${opts([['moderate','Moderate 0.8g/kg'],['low','Low 0.6g/kg'],['high','High 1.2g/kg']],S.protein)}</select></div>
+      <div><div class="lbl">Oxalate</div><select id="oxalate" class="field">${opts([['none','No restriction'],['low','Low oxalate']],S.oxalate)}</select></div>
+      <div><div class="lbl">Purine</div><select id="purine" class="field">${opts([['none','No restriction'],['low','Low purine']],S.purine)}</select></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.45rem">
+      ${toggleRow('heartHealthy','Heart-healthy (low saturated fat)','Recommended &#8212; CKD significantly raises cardiovascular risk',S.heartHealthy)}
+      ${toggleRow('diabetic','Diabetic-friendly (low glycaemic index)','~40% of CKD patients have diabetes as the underlying cause',S.diabetic)}
+      ${toggleRow('glutenFree','Gluten-free','Coeliac disease or gluten sensitivity',S.glutenFree)}
+    </div>
+  </div>
+  <div class="card"><div class="sec-title">Extra notes</div>
+    <input id="extras" class="field" style="margin-bottom:1rem" value="${esc(S.extras)}" placeholder="e.g. no shellfish, soft textures, under 30 min&#8230;"/>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.65rem .85rem;background:#fdf6ee;border:1px solid #e8d8c8;border-radius:8px;margin-bottom:1rem;gap:1rem">
+      <div><div style="font-size:.83rem;color:#2d1f17;font-weight:500">Save settings</div><div style="font-size:.72rem;color:#8a7060;margin-top:1px">Stored in Home Assistant &#8212; synced across all devices</div></div>
+      <button id="saveSettingsBtn" style="padding:.4rem .9rem;background:${S.settingsSaved?'#7a9e7e':'#c4684a'};color:white;border:none;border-radius:8px;cursor:pointer;font-size:.82rem;font-weight:500;flex-shrink:0;transition:background .3s">${S.settingsSaved?'&#10003; Saved!':'Save'}</button>
+    </div>
+    <button class="btn-main" id="generateBtn" ${S.loading?'disabled':''}>${genLabel}</button>
+  </div>
+  ${S.error?`<div class="error-box">${esc(S.error)}</div>`:''}
+  ${S.loading?`<div style="text-align:center;padding:2.5rem 1rem"><div class="spinner"></div><p style="font-family:Georgia,serif;font-style:italic;color:#8a7060">Crafting your personalised recipes&#8230;</p></div>`:''}
+  ${S.recipes.length?buildRecipes():''}
+  </div>`;
+}
+
+function buildRecipes(){
+  return`<div><div style="margin-bottom:1.1rem;padding-bottom:.7rem;border-bottom:1px solid #e8d8c8"><div style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;color:#4a7a55;font-weight:500;margin-bottom:.2rem">${S.recipes.length} recipe${S.recipes.length>1?'s':''} generated</div><div style="font-family:Georgia,serif;font-size:1.45rem;color:#5c3d2e">Your kidney-friendly recipes</div></div>
+  ${S.recipes.map((r,i)=>`
+    ${r.fridgeIngredientsUsed?.length?`<div class="fridge-banner">From your fridge: ${esc(r.fridgeIngredientsUsed.join(', '))}</div>`:''}
+    ${r.adaptations?.length?`<div class="adapt-banner"><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;font-weight:600;color:#4a7a9b;margin-bottom:.55rem">Adaptations</div>${r.adaptations.map(a=>`<div style="background:white;border:1px solid #c5dcec;border-radius:8px;padding:.45rem .7rem;margin-bottom:.4rem"><div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.15rem"><span style="color:#8a7060;text-decoration:line-through;font-size:.78rem">${esc(a.original)}</span><span style="color:#8a7060;font-size:.78rem">&#8594;</span><span style="color:#4a7a55;font-weight:600;font-size:.78rem">${esc(a.replacement)}</span></div><div style="color:#8a7060;font-style:italic;font-size:.73rem;line-height:1.4">${esc(a.reason)}</div></div>`).join('')}</div>`:''}
+    ${buildRecipeCard(r,'result',i)}
+  `).join('')}</div>`;
+}
+
+function buildRecipeCard(r,ctx,idx){
+  const base=r.servings||2;
+  const sv=S.servingOverrides[`${ctx}_${idx}`]!==undefined?S.servingOverrides[`${ctx}_${idx}`]:base;
+  const ratio=sv/base;
+  const fav=isFav(r);
+  return`<div class="recipe-card">
+    <div class="recipe-head">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">
+        <div style="flex:1"><div style="font-family:Georgia,serif;font-size:1.22rem;color:#5c3d2e;line-height:1.25">${esc(r.name)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem">${['Servings: '+sv,'Prep: '+r.prepTime,'Cook: '+r.cookTime].map(t=>`<span style="padding:.22rem .6rem;background:#fdf6ee;border:1px solid #e8d8c8;border-radius:999px;font-size:.72rem;color:#8a7060">${t}</span>`).join('')}</div></div>
+        <div style="display:flex;gap:.5rem;flex-shrink:0">
+          <button data-favtoggle="${ctx}_${idx}" style="background:${fav?'#fdf5dc':'white'};border:1.5px solid ${fav?'#c49a1a':'#e8d8c8'};border-radius:8px;padding:.35rem .55rem;cursor:pointer;font-size:1.1rem;line-height:1">${fav?'&#9733;':'&#9734;'}</button>
+          <div style="font-size:1.9rem;line-height:1">${esc(r.emoji||'')}</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 1.25rem;background:#fdf6ee;border-bottom:1px solid #e8d8c8">
+      <span style="font-size:.79rem;color:#8a7060;font-weight:500">Adjust servings</span>
+      <div style="display:flex;align-items:center;gap:.55rem">
+        <button data-svstep="${ctx}_${idx}" data-dir="-1" style="width:28px;height:28px;border-radius:50%;border:1.5px solid #e8d8c8;background:white;cursor:pointer;color:#8a7060;font-size:1rem">-</button>
+        <span style="font-weight:600;font-size:.95rem;color:#5c3d2e;min-width:20px;text-align:center">${sv}</span>
+        <button data-svstep="${ctx}_${idx}" data-dir="1" style="width:28px;height:28px;border-radius:50%;border:1.5px solid #e8d8c8;background:white;cursor:pointer;color:#8a7060;font-size:1rem">+</button>
+      </div>
+    </div>
+    <div style="padding:1.4rem">
+      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;font-weight:600;color:#c4684a;margin-bottom:.5rem">Ingredients <span style="color:#8a7060;font-size:.67rem;text-transform:none;letter-spacing:0;font-weight:400">&#8212; tap swap to replace</span></div>
+      <ul class="ing-list">${buildIngredients(r,ctx,idx,ratio)}</ul>
+      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;font-weight:600;color:#c4684a;margin-bottom:.5rem">Instructions</div>
+      <ol style="list-style:none;display:flex;flex-direction:column;gap:.6rem;margin-bottom:1.2rem">
+        ${(r.instructions||[]).map((step,i)=>`<li style="display:flex;gap:.7rem;font-size:.86rem;line-height:1.55;color:#2d1f17"><span style="flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#c4684a;color:white;font-size:.68rem;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px">${i+1}</span><span>${esc(step)}</span></li>`).join('')}
+      </ol>
+      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;font-weight:600;color:#c4684a;margin-bottom:.5rem">Nutrition per serving</div>
+      <div class="nut-grid">${Object.entries(r.nutrition||{}).map(([k,v])=>`<div class="nut-box"><div class="nut-val${ratio!==1?' scaled':''}">${esc(scaleNut(v,ratio))}</div><div class="nut-key">${NUT_LABELS[k]||k}</div></div>`).join('')}</div>
+      <div class="kidney-tip"><span style="flex-shrink:0">&#128154;</span>${esc(r.kidneyTip||'')}</div>
+    </div>
+  </div>`;
+}
+
+function buildIngredients(r,ctx,idx,ratio){
+  return(r.ingredients||[]).map((ing,ii)=>{
+    const swKey=`${ctx}_${idx}_${ii}`;
+    const sw=S.swapState[swKey]||{};
+    return`<li class="ing-item">
+      <div style="display:flex;align-items:flex-start;gap:.4rem;flex-wrap:wrap">
+        <span style="color:#e8937a;flex-shrink:0;margin-top:1px">&#183;</span>
+        <span style="flex:1;${sw.swappedTo?'text-decoration:line-through;color:#8a7060;font-size:.8rem':'color:#2d1f17'}">${esc(scaleIng(ing,ratio))}</span>
+        ${sw.swappedTo?`<span style="color:#4a7a55;font-weight:500;font-size:.86rem">&#8594; ${esc(scaleIng(sw.swappedTo,ratio))}</span>`:''}
+        <div style="display:flex;gap:.3rem;flex-shrink:0">
+          ${!sw.opts&&!sw.swapping?`<button data-swap="${swKey}" data-ing="${esc(ing)}" data-ri="${idx}" data-ctx="${ctx}" style="border:1px solid #e8d8c8;background:white;border-radius:6px;padding:.15rem .45rem;font-size:.7rem;cursor:pointer;color:#8a7060">swap</button>`:''}
+          ${sw.swappedTo?`<button data-undoswap="${swKey}" style="border:1px solid #e8937a;background:#fff5f2;border-radius:6px;padding:.15rem .45rem;font-size:.7rem;cursor:pointer;color:#c4684a">undo</button>`:''}
+          ${sw.swapping?`<span style="font-size:.7rem;color:#8a7060;padding:.15rem .3rem">&#8230;</span>`:''}
+        </div>
+      </div>
+      ${sw.err?`<div style="font-size:.72rem;color:#c4684a;margin-left:1.1rem;margin-top:2px">${esc(sw.err)}</div>`:''}
+      ${sw.opts?`<div class="swap-opts"><div style="font-size:.7rem;color:#4a7a9b;font-weight:600;margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.5px">Choose substitute:</div>${sw.opts.map((a,oi)=>`<button data-pickswap="${swKey}" data-optidx="${oi}" style="display:block;width:100%;border:1px solid #c5dcec;background:white;border-radius:6px;padding:.3rem .6rem;font-size:.81rem;cursor:pointer;color:#2d1f17;text-align:left;margin-bottom:.3rem">${esc(a)}</button>`).join('')}<button data-cancelswap="${swKey}" style="border:none;background:none;font-size:.7rem;color:#8a7060;cursor:pointer;text-align:left;margin-top:2px">Cancel</button></div>`:''}
+    </li>`;
+  }).join('');
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+function bindEvents(){
+  const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
+  ['mealType','dietStyle','potassium','phosphorus','sodium','calcium','fluid','protein','oxalate','purine'].forEach(id=>on(id,'change',e=>update({[id]:e.target.value})));
+  on('extras','input',e=>{S.extras=e.target.value;});
+  on('dishName','input',e=>update({dishName:e.target.value}));
+  on('dishName','keydown',e=>{if(e.key==='Enter')doGenerate();});
+  on('fridgeInput','input',e=>{S.fridgeInput=e.target.value;});
+  on('fridgeInput','keydown',e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addFridgeItem();}});
+  on('fridgeAddBtn','click',addFridgeItem);
+  on('clearFridgeBtn','click',()=>update({fridgeItems:[],fridgeInput:''}));
+  on('generateBtn','click',doGenerate);
+  on('saveSettingsBtn','click',doSaveSettings);
+  on('menuUrl','input',e=>update({menuUrl:e.target.value,menuImage:null,menuPreview:null,menuText:''}));
+  on('clearMenuUrl','click',()=>update({menuUrl:''}));
+  on('menuText','input',e=>update({menuText:e.target.value,menuImage:null,menuPreview:null,menuUrl:''}));
+  on('analyzeMenuBtn','click',doAnalyzeMenu);
+  const pz=document.getElementById('pasteZone');
+  if(pz)pz.addEventListener('paste',e=>{e.preventDefault();const items=e.clipboardData?.items;if(!items)return;for(let i=0;i<items.length;i++){if(items[i].type.startsWith('image')){const rd=new FileReader();rd.onload=ev=>update({menuImage:ev.target.result.split(',')[1],menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});rd.readAsDataURL(items[i].getAsFile());return;}}});
+
+  document.getElementById('app').addEventListener('click',e=>{
+    const t=e.target.closest('[data-tab],[data-mode],[data-preset],[data-count],[data-units],[data-toggle],[data-stepper],[data-svstep],[data-favtoggle],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap]')||e.target;
+    if(t.dataset.tab)update({tab:t.dataset.tab});
+    if(t.dataset.mode)update({mode:t.dataset.mode});
+    if(t.dataset.preset)applyPreset(t.dataset.preset);
+    if(t.dataset.count)update({count:+t.dataset.count});
+    if(t.dataset.units)update({units:t.dataset.units});
+    if(t.dataset.toggle){const k=t.dataset.toggle;update({[k]:!S[k]});}
+    if(t.dataset.stepper)update({[t.dataset.stepper]:Math.max(1,Math.min(12,S[t.dataset.stepper]+(+t.dataset.dir)))});
+    if(t.dataset.svstep){const parts=t.dataset.svstep.split('_');const ctx=parts[0],idx=+parts[1];const base=(ctx==='result'?S.recipes[idx]:S.favs[idx])?.servings||2;const cur=S.servingOverrides[t.dataset.svstep]!==undefined?S.servingOverrides[t.dataset.svstep]:base;update({servingOverrides:{...S.servingOverrides,[t.dataset.svstep]:Math.max(1,Math.min(20,cur+(+t.dataset.dir)))}});}
+    if(t.dataset.favtoggle){const parts=t.dataset.favtoggle.split('_');const ctx=parts[0],idx=+parts[1];const r=ctx==='result'?S.recipes[idx]:S.favs[idx];if(r)doToggleFav(r);}
+    if(t.dataset.removefridge!==undefined)update({fridgeItems:S.fridgeItems.filter((_,j)=>j!==+t.dataset.removefridge)});
+    if(t.dataset.swap)doSwap(t.dataset.swap,t.dataset.ing,+t.dataset.ri,t.dataset.ctx);
+    if(t.dataset.undoswap){const sw={...S.swapState};delete sw[t.dataset.undoswap];update({swapState:sw});}
+    if(t.dataset.cancelswap){const sw={...S.swapState,[t.dataset.cancelswap]:{...S.swapState[t.dataset.cancelswap]}};delete sw[t.dataset.cancelswap].opts;update({swapState:sw});}
+    if(t.dataset.pickswap){const key=t.dataset.pickswap;const sw=S.swapState[key];if(sw?.opts)update({swapState:{...S.swapState,[key]:{swappedTo:sw.opts[+t.dataset.optidx]}}});}
+  });
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function applyPreset(k){const p=PRESETS[k];update({preset:k,...p});}
+
+async function doSaveSettings(){
+  await apiSet('settings',{mealType:S.mealType,dietStyle:S.dietStyle,servings:S.servings,count:S.count,potassium:S.potassium,phosphorus:S.phosphorus,sodium:S.sodium,calcium:S.calcium,fluid:S.fluid,protein:S.protein,oxalate:S.oxalate,purine:S.purine,heartHealthy:S.heartHealthy,diabetic:S.diabetic,glutenFree:S.glutenFree,extras:S.extras});
+  update({settingsSaved:true});setTimeout(()=>update({settingsSaved:false}),2000);
+}
+
+async function doToggleFav(r){
+  const upd=isFav(r)?S.favs.filter(f=>f.name!==r.name):[...S.favs,{...r,savedAt:new Date().toLocaleDateString()}];
+  S.favs=upd;await apiSet('favourites',upd);render();
+}
+
+function addFridgeItem(){const v=S.fridgeInput.trim();if(v&&!S.fridgeItems.includes(v))S.fridgeItems=[...S.fridgeItems,v];update({fridgeInput:''});}
+
+async function doGenerate(){
+  if(S.mode==='fridge')return generateFridge();
+  if(S.mode==='adapt')return generateAdapt();
+  update({loading:true,error:'',recipes:[],swapState:{},servingOverrides:{}});
+  const p=`Generate ${S.count} kidney-friendly recipe(s) for ${S.servings} serving(s).\nMeal:${S.mealType==='any'?'any':S.mealType},Style:${S.dietStyle}\nRestrictions:${rText()}\nExtra:${extrasStr()}\nUnits:${unitStr()}\nReturn ONLY a JSON array,no markdown:\n[{"name":"...","emoji":"...","servings":${S.servings},"prepTime":"10 min","cookTime":"20 min","ingredients":["..."],"instructions":["..."],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
+  try{const t=await claude([{role:'user',content:p}],3000);update({loading:false,recipes:parseJSON(t)});}
+  catch(e){update({loading:false,error:e.message});}
+}
+
+async function generateFridge(){
+  if(!S.fridgeItems.length){update({error:'Add at least one ingredient.'});return;}
+  update({loading:true,error:'',recipes:[],swapState:{},servingOverrides:{}});
+  const p=`I have:${S.fridgeItems.join(',')}. Create ${S.count} kidney-friendly recipe(s) for ${S.servings} servings using AS MANY as possible.\nMeal:${S.mealType},Style:${S.dietStyle}\nRestrictions:${rText()}\nExtra:${extrasStr()}\nUnits:${unitStr()}\nReturn ONLY a JSON array:\n[{"name":"...","emoji":"...","servings":${S.servings},"prepTime":"...","cookTime":"...","fridgeIngredientsUsed":[],"ingredients":[],"instructions":[],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
+  try{const t=await claude([{role:'user',content:p}],3000);update({loading:false,recipes:parseJSON(t)});}
+  catch(e){update({loading:false,error:e.message});}
+}
+
+async function generateAdapt(){
+  if(!S.dishName.trim()){update({error:'Enter a dish name.'});return;}
+  update({loading:true,error:'',recipes:[],swapState:{},servingOverrides:{}});
+  const p=`Adapt "${S.dishName.trim()}" into a kidney-safe recipe for ${S.servings} servings.\nStyle:${S.dietStyle}\nRestrictions:${rText()}\nExtra:${extrasStr()}\nUnits:${unitStr()}\nReturn ONLY a JSON array:\n[{"name":"Kidney-Friendly ${S.dishName.trim()}","emoji":"...","servings":${S.servings},"prepTime":"...","cookTime":"...","adaptations":[{"original":"...","replacement":"...","reason":"..."}],"ingredients":[],"instructions":[],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
+  try{const t=await claude([{role:'user',content:p}],3000);update({loading:false,recipes:parseJSON(t)});}
+  catch(e){update({loading:false,error:e.message});}
+}
+
+async function doSwap(swKey,ing,ri,ctx){
+  S.swapState={...S.swapState,[swKey]:{swapping:true}};render();
+  const r=ctx==='result'?S.recipes[ri]:S.favs[ri];
+  try{
+    const t=await claude([{role:'user',content:`Recipe "${r?.name}" has ingredient "${ing}". Restrictions:${JSON.stringify({potassium:S.potassium,phosphorus:S.phosphorus,sodium:S.sodium})}. Give 3 kidney-safe alternatives. Return ONLY a JSON array of 3 strings. No markdown.`}],400);
+    S.swapState={...S.swapState,[swKey]:{opts:parseJSON(t)}};
+  }catch{S.swapState={...S.swapState,[swKey]:{err:'Could not load substitutes.'}};}
+  render();
+}
+
+async function doAnalyzeMenu(){
+  const hasImg=S.menuImage||S.menuUrl.trim(),hasText=S.menuText.trim();
+  if(!hasImg&&!hasText){update({menuError:'Provide a menu image URL, paste a screenshot, or type the dishes.'});return;}
+  update({menuLoading:true,menuError:'',menuAnalysis:null});
+  const instr=`You are a renal dietitian. Analyse this menu.\nRestrictions:${rText()}\nReturn ONLY valid JSON:\n{"restaurantType":"...","generalTips":["..."],"dishes":[{"name":"...","safetyRating":"safe|caution|avoid","safetyReason":"...","omissions":["..."]}]}\nAll dishes, order safe first.`;
+  try{
+    let messages;
+    if(S.menuImage)messages=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:S.menuImage}},{type:'text',text:instr}]}];
+    else if(S.menuUrl.trim())messages=[{role:'user',content:[{type:'image',source:{type:'url',url:S.menuUrl.trim()}},{type:'text',text:instr}]}];
+    else messages=[{role:'user',content:`Menu:\n${hasText}\n\n${instr}`}];
+    const r=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2000,messages})});
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.error||'API error');
+    update({menuLoading:false,menuAnalysis:parseJSON(data.content.map(b=>b.text||'').join(''))});
+  }catch(e){update({menuLoading:false,menuError:e.message});}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async function init(){
+  const status=await fetch('/api/status').then(r=>r.json()).catch(()=>({configured:false}));
+  const settings=await apiGet('settings');
+  if(settings)Object.assign(S,{mealType:settings.mealType||'any',dietStyle:settings.dietStyle||'omnivore',servings:settings.servings||2,count:settings.count||1,potassium:settings.potassium||'moderate',phosphorus:settings.phosphorus||'moderate',sodium:settings.sodium||'moderate',calcium:settings.calcium||'none',fluid:settings.fluid||'none',protein:settings.protein||'moderate',oxalate:settings.oxalate||'none',purine:settings.purine||'none',heartHealthy:!!settings.heartHealthy,diabetic:!!settings.diabetic,glutenFree:!!settings.glutenFree,extras:settings.extras||''});
+  const favs=await apiGet('favourites');
+  if(favs)S.favs=favs;
+  S.favLoaded=true;
+  update({ready:true,configured:status.configured});
+})();
+</script>
+</body>
+</html>
