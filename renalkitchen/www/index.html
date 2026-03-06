@@ -630,23 +630,25 @@ function bindEvents(){
   });
 
   // Delegation
-  document.getElementById('app').addEventListener('click',async e=>{
+  async function handleFavSave(i){
+    const r=S.favs[i];if(!r)return;
+    const name=document.getElementById(`favEditName_${i}`)?.value.trim()||r.name;
+    const prepTime=document.getElementById(`favEditPrep_${i}`)?.value.trim()||r.prepTime;
+    const cookTime=document.getElementById(`favEditCook_${i}`)?.value.trim()||r.cookTime;
+    const kidneyTip=document.getElementById(`favEditTip_${i}`)?.value.trim()||r.kidneyTip;
+    const notes=document.getElementById(`favEditNotes_${i}`)?.value.trim()??r.notes??'';
+    const instructions=(document.getElementById(`favEditInstr_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const ingredients=(document.getElementById(`favEditIngs_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    S.favs[i]={...r,name,prepTime,cookTime,kidneyTip,notes,instructions,ingredients};
+    await apiSet('favourites',S.favs);
+    update({editingFav:null});
+  }
+
+  document.getElementById('app').addEventListener('click',e=>{
     const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap]')||e.target;
+    if(t.dataset.tab)update({tab:t.dataset.tab});
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
-    if(t.dataset.favsave!==undefined){
-      const i=+t.dataset.favsave;
-      const r=S.favs[i];if(!r)return;
-      const name=document.getElementById(`favEditName_${i}`)?.value.trim()||r.name;
-      const prepTime=document.getElementById(`favEditPrep_${i}`)?.value.trim()||r.prepTime;
-      const cookTime=document.getElementById(`favEditCook_${i}`)?.value.trim()||r.cookTime;
-      const kidneyTip=document.getElementById(`favEditTip_${i}`)?.value.trim()||r.kidneyTip;
-      const instructions=(document.getElementById(`favEditInstr_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-      const ingredients=(document.getElementById(`favEditIngs_${i}`)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-      const notes=document.getElementById(`favEditNotes_${i}`)?.value.trim()??r.notes??'';
-      S.favs[i]={...r,name,prepTime,cookTime,kidneyTip,notes,instructions,ingredients};
-      await apiSet('favourites',S.favs);
-      update({editingFav:null});
-    }
+    if(t.dataset.favsave!==undefined)handleFavSave(+t.dataset.favsave);
     if(t.dataset.mode)update({mode:t.dataset.mode});
     if(t.dataset.count)update({count:+t.dataset.count});
     if(t.dataset.preptime)update({prepTime:t.dataset.preptime});
