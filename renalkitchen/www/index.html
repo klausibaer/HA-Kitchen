@@ -630,7 +630,7 @@ function bindEvents(){
   });
 
   // Delegation
-  document.getElementById('app').addEventListener('click',e=>{
+  document.getElementById('app').addEventListener('click',async e=>{
     const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap]')||e.target;
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
     if(t.dataset.favsave!==undefined){
