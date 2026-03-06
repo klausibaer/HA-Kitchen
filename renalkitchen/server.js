@@ -44,12 +44,13 @@ app.use(express.static(path.join(__dirname, 'www')));
 
 // ── API: Storage ──────────────────────────────────────────────────────────────
 
-app.get('/api/data/:key', (req, res) => {
+// Use /rk/ prefix — HA Ingress intercepts /api/* before it reaches the addon
+app.get('/rk/data/:key', (req, res) => {
   const value = readData(req.params.key);
   res.json({ value });
 });
 
-app.post('/api/data/:key', (req, res) => {
+app.post('/rk/data/:key', (req, res) => {
   try {
     writeData(req.params.key, req.body.value);
     res.json({ ok: true });
@@ -58,10 +59,9 @@ app.post('/api/data/:key', (req, res) => {
   }
 });
 
-// ── API: Claude proxy ─────────────────────────────────────────────────────────
-// Anthropic API key lives server-side in addon options — never sent to browser.
+// ── Claude proxy ──────────────────────────────────────────────────────────────
 
-app.post('/api/claude', async (req, res) => {
+app.post('/rk/claude', async (req, res) => {
   const opts = readOptions();
   const apiKey = opts.anthropic_api_key || '';
 
@@ -98,7 +98,7 @@ app.post('/api/claude', async (req, res) => {
 
 // ── API: Status ───────────────────────────────────────────────────────────────
 
-app.get('/api/status', (req, res) => {
+app.get('/rk/status', (req, res) => {
   const opts = readOptions();
   res.json({
     configured: !!opts.anthropic_api_key,
