@@ -30,7 +30,7 @@ const S={
   pantry:[],pantryLoaded:false,pantryGroup:'category',pantryFilter:'',
   pantryAddOpen:false,pantryEditId:null,pantryReceiptOpen:false,pantryReceiptScanning:false,pantryReceiptStatus:'',
   pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:''},
-  menuText:'',ocrLoading:false,ocrProgress:0,
+  menuText:'',ocrLoading:false,ocrProgress:0,ocrError:'',
   menuAnalysis:null,menuLoading:false,menuError:'',
   // nutrition tracker
   nutritionLog:[],  // each entry has profileId field
@@ -726,12 +726,14 @@ function buildMenu(){
           <div style="height:4px;background:#f0d0c0;border-radius:2px;overflow:hidden">
             <div style="height:100%;background:var(--terracotta);border-radius:2px;animation:pulse 1.5s ease-in-out infinite;width:60%"></div>
           </div>
+          <div style="font-size:.72rem;color:var(--stone);margin-top:.4rem">${S.menuImages.filter(i=>i.status==='done').length}/${S.menuImages.length} fertig</div>
         </div>
       `:''}
-      <button id="photoBtn" style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:var(--warm-white);border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--stone-dark);font-weight:500;transition:border-color .2s" ${anyActive?'disabled':''}>
+      <label for="galleryInputPersist" style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:${anyActive?'#f5f0ec':'var(--warm-white)'};border:1.5px dashed ${anyActive?'#c8b8a8':'var(--border)'};border-radius:10px;cursor:${anyActive?'not-allowed':'pointer'};font-size:.88rem;color:var(--stone-dark);font-weight:500;box-sizing:border-box;pointer-events:${anyActive?'none':'auto'}">
         <span style="font-size:1.3rem">🖼️</span>
-        <div style="text-align:left"><div>${anyActive?'Weitere Bilder nach Abschluss':'Bilder auswählen (mehrere möglich)'}</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Claude erkennt Text direkt aus dem Foto</div></div>
-      </button>
+        <div style="text-align:left"><div>${anyActive?'Warte auf Abschluss…':'Bilder auswählen (mehrere möglich)'}</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Claude liest Text direkt aus dem Foto</div></div>
+      </label>
+      ${S.ocrError?`<div style="background:#fff0ee;border:1px solid #e8937a;border-radius:8px;padding:.5rem .75rem;margin-top:.4rem;font-size:.78rem;color:#c4684a">⚠ ${esc(S.ocrError)}</div>`:''} 
     </div>
 
     <div style="margin-bottom:1.1rem">
@@ -1308,23 +1310,7 @@ function bindEvents(){
     if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
   });
 
-  // Receipt photo button (dynamic — delegation)
-  document.getElementById('app').addEventListener('click',e=>{
-    if(e.target.closest('#receiptPhotoBtn')){
-      const inp=document.createElement('input');
-      inp.type='file';inp.accept='image/*';
-      inp.style.cssText='position:fixed;opacity:0;pointer-events:none;top:-9999px';
-      document.body.appendChild(inp);
-      inp.addEventListener('change',async ev=>{
-        const file=ev.target.files&&ev.target.files[0];
-        document.body.removeChild(inp);
-        if(!file)return;
-        update({pantryReceiptScanning:true});
-        await doScanReceipt(file);
-      });
-      inp.click();
-    }
-  });
+  // (receiptPhotoBtn handling moved into main delegation below)
   on('fridgeAddBtn','click',addFridgeItem);
   on('clearFridgeBtn','click',()=>update({fridgeItems:[],fridgeInput:''}));
   on('generateBtn','click',doGenerate);
@@ -1361,59 +1347,90 @@ async function handleFavSave(i){
   update({editingFav:null});
 }
 // ── Claude Vision OCR — top-level so doScanReceipt and menu tab can both call it
-async function ocrImageWithClaude(file, customPrompt){
-  return new Promise((resolve,reject)=>{
+// Compress image to max 1600px wide/tall and JPEG quality 0.82 before OCR.
+// Reduces typical phone photo from 5MB to ~300KB, well within server limits.
+async function compressImageForOcr(file){
+  return new Promise((res,rej)=>{
     const reader=new FileReader();
-    reader.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
-    reader.onload=async ev=>{
-      try{
-        const b64=ev.target.result.split(',')[1];
-        const mime=file.type||'image/jpeg';
-        const prompt=customPrompt||'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
-        const r=await fetch(BASE+'rk/claude',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            max_tokens:1500,
-            messages:[{role:'user',content:[
-              {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-              {type:'text',text:prompt}
-            ]}]
-          })
-        });
-        const data=await r.json();
-        if(!r.ok)throw new Error(data.error||'Claude API error');
-        resolve(data.content.map(b=>b.text||'').join('').trim());
-      }catch(e){reject(e);}
+    reader.onerror=()=>rej(new Error('Lesen fehlgeschlagen'));
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1600;
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){
+          if(w>h){h=Math.round(h*MAX/w);w=MAX;}
+          else{w=Math.round(w*MAX/h);h=MAX;}
+        }
+        const cv=document.createElement('canvas');
+        cv.width=w;cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        const b64=cv.toDataURL('image/jpeg',0.82).split(',')[1];
+        res({b64,mime:'image/jpeg'});
+      };
+      img.onerror=()=>rej(new Error('Bildfehler'));
+      img.src=ev.target.result;
     };
     reader.readAsDataURL(file);
   });
 }
 
+async function ocrImageWithClaude(file, customPrompt){
+  try{
+    const {b64,mime}=await compressImageForOcr(file);
+    const prompt=customPrompt||'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
+    const r=await fetch(BASE+'rk/claude',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        max_tokens:1500,
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+          {type:'text',text:prompt}
+        ]}]
+      })
+    });
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.error||'Server: '+r.status);
+    const text=data.content.map(b=>b.text||'').join('').trim();
+    if(!text)throw new Error('Kein Text erkannt');
+    return text;
+  }catch(e){
+    throw e;
+  }
+}
+
 async function runOcrQueue(files){
+  if(!files||!files.length){
+    update({ocrError:'Keine Datei ausgewählt'});
+    return;
+  }
   const newImgs=files.map(f=>({
     id:String(Date.now()+Math.random()),
     name:f.name,status:'pending',file:f,text:''
   }));
-  update({menuImages:[...S.menuImages,...newImgs],ocrLoading:true});
+  update({menuImages:[...S.menuImages,...newImgs],ocrLoading:true,ocrError:''});
 
   for(const img of newImgs){
-    // Mutate in place then spread to trigger reactivity
     img.status='active';
-    update({menuImages:[...S.menuImages],ocrProgress:0});
-    // yield to browser so the 'active' chip actually paints before the await
-    await new Promise(r=>setTimeout(r,30));
+    // Force render BEFORE the await so chip shows 'active'
+    Object.assign(S,{menuImages:[...S.menuImages]});
+    render();
+    await new Promise(r=>setTimeout(r,50));
     try{
       const text=await ocrImageWithClaude(img.file);
-      img.text=text;
+      img.text=text||'(kein Text erkannt)';
       img.status='done';
     }catch(err){
-      img.status='error';img.text='';img.errorMsg=err.message;
-      console.error('OCR error:',img.name,err.message);
+      img.status='error';
+      img.text='';
+      img.errorMsg=err.message;
+      update({ocrError:'Fehler bei '+img.name+': '+err.message});
     }
     const combined=S.menuImages.filter(i=>i.status==='done'&&i.text)
       .map(i=>i.text).join('\n\n---\n\n');
-    update({menuImages:[...S.menuImages],menuText:combined,ocrProgress:100});
+    Object.assign(S,{menuImages:[...S.menuImages],menuText:combined,ocrProgress:100});
+    render();
   }
   update({ocrLoading:false});
 }
@@ -1422,10 +1439,12 @@ function initGlobalEvents(){
 
   // ── Gallery input (multiple) ───────────────────────────────────────────────
   document.getElementById('galleryInputPersist').addEventListener('change',e=>{
-    // Copy file references BEFORE clearing the input (clearing may free FileList)
     const files=Array.from(e.target.files||[]);
-    e.target.value='';
-    if(files.length)runOcrQueue(files);
+    // Clear AFTER copying — do it async so File objects are safely in our array first
+    if(files.length){
+      runOcrQueue(files);
+      setTimeout(()=>{try{e.target.value='';}catch{}},500);
+    }
   });
 
   // ── Food photo picker — created dynamically to avoid WebView interference ────
@@ -1452,7 +1471,22 @@ function initGlobalEvents(){
 
   // ── Delegation (registered once) ───────────────────────────────────────────
   document.getElementById('app').addEventListener('click',e=>{
-    if(e.target.closest('#photoBtn')){document.getElementById('galleryInputPersist').click();return;}
+    // photoBtn replaced by <label> — no longer needs JS click handling
+    if(e.target.closest('#receiptPhotoBtn')){
+      const inp=document.createElement('input');
+      inp.type='file';inp.accept='image/*';
+      inp.style.cssText='position:fixed;opacity:0;pointer-events:none;top:-9999px';
+      document.body.appendChild(inp);
+      inp.addEventListener('change',async ev=>{
+        const file=Array.from(ev.target.files||[])[0];
+        document.body.removeChild(inp);
+        if(!file)return;
+        update({pantryReceiptScanning:true,pantryReceiptStatus:'Lese Text vom Kassenbon…'});
+        await doScanReceipt(file);
+      });
+      inp.click();
+      return;
+    }
     if(e.target.closest('#foodPhotoBtn')){pickFoodPhoto();return;}
     if(e.target.closest('#clearOcrPreview')){update({ocrPreviewUrl:null,menuText:'',menuAnalysis:null});return;}
     const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle],[data-logmeal],[data-removeimg],[data-clearallimgs],[data-clearmenutext],[data-deletelog],[data-clearlog],[data-pushsensor],[data-pushdailysensor],[data-openmanuallog],[data-closemanuallog],[data-logmode],[data-clearfoodphoto],[data-logforprofile],[data-closelogpicker],[data-openpantryform],[data-closepantryform],[data-savepantryitem],[data-editpantryitem],[data-deletepantryitem],[data-pantrygroup],[data-openreceiptscanner],[data-closereceiptscanner],[data-usetocook],[data-pfcat],[data-pfloc],[data-setgoal],[data-togglegoal]')||e.target;
@@ -1772,7 +1806,8 @@ async function doScanReceipt(file){
   try{
     // Step 1: OCR — extract raw text from receipt image (same path as menu OCR)
     update({pantryReceiptScanning:true,pantryReceiptStatus:'Lese Text vom Kassenbon…'});
-    const rawText=await ocrImageWithClaude(file,'Extract ALL text from this receipt exactly as printed. Preserve product names, quantities, prices. Output raw text only.');
+    // ocrImageWithClaude now auto-compresses images before sending
+    const rawText=await ocrImageWithClaude(file,'Extract ALL text from this receipt exactly as printed. Preserve every line: product names, quantities, weights, prices. Output raw text only, no interpretation.');
 
     if(!rawText.trim()){
       update({pantryReceiptScanning:false,pantryReceiptStatus:''});
