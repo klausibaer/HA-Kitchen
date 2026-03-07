@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>RenalKitchen</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -111,40 +112,8 @@ textarea.field{resize:vertical}
 
 <div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#8a7060">Loading&#8230;</div></div>
 
-<!-- Persistent gallery input — stays in DOM across re-renders -->
+<!-- Gallery input — stays in DOM across re-renders -->
 <input id="galleryInputPersist" type="file" accept="image/*" style="position:fixed;opacity:0;pointer-events:none;top:-9999px"/>
-
-<!-- Photo action sheet -->
-<div id="photoSheet" style="display:none;position:fixed;inset:0;z-index:200">
-  <div id="photoSheetBg" style="position:absolute;inset:0;background:rgba(45,31,23,.5);backdrop-filter:blur(3px)"></div>
-  <div style="position:absolute;bottom:0;left:0;right:0;padding:1rem;max-width:480px;margin:0 auto">
-    <div style="background:white;border-radius:18px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.25)">
-      <div style="padding:.9rem 1.2rem .7rem;border-bottom:1px solid var(--border)">
-        <div style="font-family:Georgia,serif;font-size:.95rem;color:var(--stone-dark);text-align:center">Foto hinzufügen</div>
-      </div>
-      <button id="sheetCameraBtn" style="width:100%;padding:1rem 1.2rem;background:none;border:none;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:.9rem;font-size:.95rem;color:var(--stone-dark);text-align:left">
-        <span style="font-size:1.4rem">📷</span>
-        <div><div style="font-weight:600">Kamera</div><div style="font-size:.75rem;color:var(--stone);margin-top:1px">Foto jetzt aufnehmen</div></div>
-      </button>
-      <button id="sheetGalleryBtn" style="width:100%;padding:1rem 1.2rem;background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.9rem;font-size:.95rem;color:var(--stone-dark);text-align:left">
-        <span style="font-size:1.4rem">🖼️</span>
-        <div><div style="font-weight:600">Galerie / Dateien</div><div style="font-size:.75rem;color:var(--stone);margin-top:1px">Bild aus Bibliothek wählen</div></div>
-      </button>
-    </div>
-    <button id="sheetCancelBtn" style="width:100%;margin-top:.6rem;padding:.95rem;background:white;border:none;border-radius:14px;cursor:pointer;font-size:.95rem;font-weight:600;color:var(--terracotta);box-shadow:0 4px 16px rgba(0,0,0,.12)">Abbrechen</button>
-  </div>
-</div>
-
-<!-- In-app camera viewfinder (getUserMedia) -->
-<div id="cameraView" style="display:none;position:fixed;inset:0;z-index:210;background:#000;flex-direction:column">
-  <video id="cameraVideo" autoplay playsinline style="flex:1;width:100%;object-fit:cover;display:block"></video>
-  <div style="padding:1.2rem 1rem;background:#111;display:flex;align-items:center;justify-content:space-between;gap:1rem">
-    <button id="camCancelBtn" style="flex:1;padding:.75rem;background:rgba(255,255,255,.12);color:white;border:none;border-radius:12px;cursor:pointer;font-size:.9rem">Abbrechen</button>
-    <button id="camSnapBtn" style="width:68px;height:68px;border-radius:50%;background:white;border:4px solid rgba(255,255,255,.4);cursor:pointer;flex-shrink:0;box-shadow:0 0 0 3px rgba(255,255,255,.2)"></button>
-    <div style="flex:1"></div>
-  </div>
-  <canvas id="camCanvas" style="display:none"></canvas>
-</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -166,7 +135,7 @@ const S={
   loading:false,error:'',
   recipes:[],favs:[],favLoaded:false,
   fridgeItems:[],fridgeInput:'',dishName:'',
-  menuUrl:'',menuImageData:null,menuImageMime:'image/jpeg',menuPreview:null,menuText:'',
+  menuText:'',ocrLoading:false,ocrProgress:0,ocrPreviewUrl:null,
   menuAnalysis:null,menuLoading:false,menuError:'',
   swapState:{},servingOverrides:{},
   editingFav:null, // index of fav being edited, or null
@@ -438,43 +407,33 @@ function buildFavEditor(r,i){
 
 // ── Menu ──────────────────────────────────────────────────────────────────────
 function buildMenu(){
-  const hasInput=S.menuUrl.trim()||S.menuImageData||S.menuText.trim();
+  const hasText=S.menuText.trim();
   return`<div><div class="card">
-    <div class="sec-title">Restaurant menu analyser</div>
-    <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Provide the menu — photo, screenshot, URL, or typed text. Rates every dish for kidney safety based on your active profile.</p>
-    
-    <div style="margin-bottom:1rem">
-      <div class="lbl">📷 Foto</div>
-      <button id="photoBtn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:.6rem;padding:.75rem 1rem;background:var(--warm-white);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--stone-dark);font-weight:500;transition:border-color .2s">
-        <span style="font-size:1.2rem">📷</span> Foto hinzufügen
+    <div class="sec-title">Restaurant-Menü analysieren</div>
+    <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Foto einer Speisekarte hochladen oder Text einfügen. Text wird direkt auf deinem Gerät erkannt — kein Bild wird gesendet.</p>
+
+    <div style="margin-bottom:1.1rem">
+      <div class="lbl">📷 Foto / Screenshot der Speisekarte</div>
+      <button id="photoBtn" style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:var(--warm-white);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--stone-dark);font-weight:500">
+        <span style="font-size:1.3rem">🖼️</span>
+        <div style="text-align:left"><div>Bild auswählen</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Text wird automatisch erkannt (OCR)</div></div>
       </button>
-      ${S.menuPreview?`<div style="margin-top:.6rem;position:relative;display:inline-block"><img src="${S.menuPreview}" style="max-width:100%;max-height:180px;border-radius:10px;object-fit:contain;display:block;border:1px solid var(--border)"/><button id="clearImg" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.55);color:white;border:none;cursor:pointer;font-size:.8rem;line-height:1">✕</button></div>`:''}
+      ${S.ocrLoading?`<div style="margin-top:.7rem;padding:.7rem;background:#f5f8f5;border-radius:8px;border:1px solid #d0e8d0">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div><span style="font-size:.8rem;color:#4a7a55;font-weight:500">Text wird erkannt… ${S.ocrProgress>0?Math.round(S.ocrProgress)+'%':''}</span></div>
+        <div style="height:4px;background:#d0e8d0;border-radius:2px"><div style="height:100%;width:${S.ocrProgress}%;background:#5a8a60;border-radius:2px;transition:width .3s"></div></div>
+      </div>`:''}
+      ${S.ocrPreviewUrl&&!S.ocrLoading?`<div style="margin-top:.6rem;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:#f0f8f1;border:1px solid #c0ddc0;border-radius:8px;font-size:.8rem;color:#4a7a55">✓ Text erkannt — im Textfeld unten bearbeiten<button id="clearOcrPreview" style="margin-left:auto;border:none;background:none;cursor:pointer;color:#8a7060;font-size:.85rem">✕</button></div>`:''}
     </div>
 
-    <div style="margin-bottom:1rem">
-      <div class="lbl">🔗 Image URL</div>
-      <div style="display:flex;gap:.5rem">
-        <input id="menuUrl" class="field" style="flex:1" value="${esc(S.menuUrl)}" placeholder="https://example.com/menu.jpg"/>
-        ${S.menuUrl?`<button id="clearMenuUrl" style="padding:0 .7rem;border:1px solid #e8d8c8;background:white;border-radius:8px;cursor:pointer;color:#8a7060">✕</button>`:''}
-      </div>
+    <div style="margin-bottom:1.1rem">
+      <div class="lbl">✏️ Menütext (direkt eingeben oder bearbeiten)</div>
+      <textarea id="menuText" rows="6" class="field" style="resize:vertical;line-height:1.5;font-size:.84rem" placeholder="Vorspeisen:&#10;- Caesar Salat&#10;Hauptgerichte:&#10;- Gegrillter Lachs, Zitronenbutter">${esc(S.menuText)}</textarea>
     </div>
 
-    <div style="margin-bottom:1rem">
-      <div class="lbl">📋 Paste screenshot (Ctrl+V / ⌘V)</div>
-      <div id="pasteZone" tabindex="0" style="padding:.9rem;border:2px dashed ${S.menuPreview&&!S.menuUrl?'#7a9e7e':'#e8d8c8'};border-radius:10px;text-align:center;cursor:text;background:#fffaf5;font-size:.83rem;color:#8a7060">
-        ${S.menuPreview&&!S.menuUrl?'✓ Image pasted — paste again to replace':'Click here, then Ctrl+V / ⌘V to paste a screenshot'}
-      </div>
-    </div>
-
-    <div style="margin-bottom:1rem">
-      <div class="lbl">✏️ Type or paste menu text</div>
-      <textarea id="menuText" rows="4" class="field" style="resize:vertical;line-height:1.5" placeholder="Starters:\n- Caesar Salad\nMains:\n- Grilled salmon, lemon butter">${esc(S.menuText)}</textarea>
-    </div>
-
-    ${hasInput?`<button class="btn-main" id="analyzeMenuBtn" ${S.menuLoading?'disabled':''}>${S.menuLoading?'Analysing…':'Analyse menu for my restrictions'}</button>`:''}
+    ${hasText?`<button class="btn-main" id="analyzeMenuBtn" ${S.menuLoading?'disabled':''}>${S.menuLoading?'Analysiere…':'Menü für mein Profil analysieren'}</button>`:''}
   </div>
   ${S.menuError?`<div class="error-box">${esc(S.menuError)}</div>`:''}
-  ${S.menuLoading?`<div style="text-align:center;padding:2rem"><div class="spinner"></div><p style="font-family:Georgia,serif;font-style:italic;color:#8a7060">Reading the menu…</p></div>`:''}
+  ${S.menuLoading?`<div style="text-align:center;padding:2rem"><div class="spinner"></div><p style="font-family:Georgia,serif;font-style:italic;color:#8a7060">Lese das Menü…</p></div>`:''}
   ${S.menuAnalysis?buildMenuResults():''}
   </div>`;
 }
@@ -641,30 +600,8 @@ function bindEvents(){
   on('generateBtn','click',doGenerate);
 
   // Menu
-  on('menuUrl','input',e=>update({menuUrl:e.target.value,menuImageData:null,menuPreview:null,menuText:''}));
-  on('clearMenuUrl','click',()=>update({menuUrl:''}));
-  on('clearImg','click',()=>update({menuImageData:null,menuPreview:null}));
-  on('menuText','input',e=>update({menuText:e.target.value,menuImageData:null,menuPreview:null,menuUrl:''}));
+  on('menuText','input',e=>update({menuText:e.target.value,menuAnalysis:null}));
   on('analyzeMenuBtn','click',doAnalyzeMenu);
-
-  // Camera button — now handled via action sheet in initGlobalEvents
-
-  // Paste zone
-  const pz=document.getElementById('pasteZone');
-  if(pz)pz.addEventListener('paste',e=>{
-    e.preventDefault();
-    const items=e.clipboardData?.items;
-    if(!items)return;
-    for(let i=0;i<items.length;i++){
-      if(items[i].type.startsWith('image')){
-        const mime=items[i].type;
-        const rd=new FileReader();
-        rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
-        rd.readAsDataURL(items[i].getAsFile());
-        return;
-      }
-    }
-  });
 }
 
 // ── One-time global delegation (NOT inside bindEvents — must not re-register) ─
@@ -682,61 +619,42 @@ async function handleFavSave(i){
   update({editingFav:null});
 }
 function initGlobalEvents(){
-  function handleImageFile(file){
-    if(!file)return;
-    const mime=file.type||'image/jpeg';
-    const rd=new FileReader();
-    rd.onload=ev=>{const b64=ev.target.result.split(',')[1];update({menuImageData:b64,menuImageMime:mime,menuPreview:ev.target.result,menuUrl:'',menuText:'',menuAnalysis:null,menuError:''});};
-    rd.readAsDataURL(file);
+
+  // ── Tesseract OCR ───────────────────────────────────────────────────────────
+  let ocrWorker=null;
+  async function getOcrWorker(){
+    if(ocrWorker)return ocrWorker;
+    ocrWorker=await Tesseract.createWorker(['deu','eng'],1,{
+      logger:m=>{if(m.status==='recognizing text')update({ocrProgress:m.progress*100});}
+    });
+    return ocrWorker;
   }
 
-  // ── Photo action sheet ──────────────────────────────────────────────────────
-  const sheet=document.getElementById('photoSheet');
-  const openSheet=()=>{sheet.style.display='block';};
-  const closeSheet=()=>{sheet.style.display='none';};
-  document.getElementById('photoSheetBg').addEventListener('click',closeSheet);
-  document.getElementById('sheetCancelBtn').addEventListener('click',closeSheet);
-
-  // ── Gallery (file input) ────────────────────────────────────────────────────
-  document.getElementById('galleryInputPersist').addEventListener('change',e=>{handleImageFile(e.target.files&&e.target.files[0]);e.target.value='';});
-  document.getElementById('sheetGalleryBtn').addEventListener('click',()=>{closeSheet();document.getElementById('galleryInputPersist').click();});
-
-  // ── In-app getUserMedia camera ──────────────────────────────────────────────
-  let camStream=null;
-  const camView=document.getElementById('cameraView');
-  const camVideo=document.getElementById('cameraVideo');
-  const camCanvas=document.getElementById('camCanvas');
-
-  async function openCamera(){
-    closeSheet();
+  async function runOcr(file){
+    update({ocrLoading:true,ocrProgress:0,menuText:'',menuAnalysis:null,menuError:''});
     try{
-      camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
-      camVideo.srcObject=camStream;
-      camView.style.display='flex';
+      const url=URL.createObjectURL(file);
+      const worker=await getOcrWorker();
+      const {data:{text}}=await worker.recognize(url);
+      URL.revokeObjectURL(url);
+      const cleaned=text.replace(/\f/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+      update({ocrLoading:false,ocrProgress:100,ocrPreviewUrl:url,menuText:cleaned});
     }catch(err){
-      // Permission denied or not available — fall back to gallery
-      alert('Kamera nicht verfügbar. Bitte ein Bild aus der Galerie wählen.');
+      update({ocrLoading:false,menuError:'Texterkennung fehlgeschlagen. Bitte Text manuell eingeben.'});
     }
   }
-  function closeCamera(){
-    if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
-    camVideo.srcObject=null;
-    camView.style.display='none';
-  }
-  function snapPhoto(){
-    camCanvas.width=camVideo.videoWidth;
-    camCanvas.height=camVideo.videoHeight;
-    camCanvas.getContext('2d').drawImage(camVideo,0,0);
-    camCanvas.toBlob(blob=>{closeCamera();handleImageFile(blob);},'image/jpeg',0.9);
-  }
 
-  document.getElementById('sheetCameraBtn').addEventListener('click',openCamera);
-  document.getElementById('camCancelBtn').addEventListener('click',closeCamera);
-  document.getElementById('camSnapBtn').addEventListener('click',snapPhoto);
+  // ── Gallery input ───────────────────────────────────────────────────────────
+  document.getElementById('galleryInputPersist').addEventListener('change',e=>{
+    const file=e.target.files&&e.target.files[0];
+    if(file)runOcr(file);
+    e.target.value='';
+  });
 
   // ── Delegation (registered once) ───────────────────────────────────────────
   document.getElementById('app').addEventListener('click',e=>{
-    if(e.target.closest('#photoBtn')){openSheet();return;}
+    if(e.target.closest('#photoBtn')){document.getElementById('galleryInputPersist').click();return;}
+    if(e.target.closest('#clearOcrPreview')){update({ocrPreviewUrl:null,menuText:'',menuAnalysis:null});return;}
     const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle]')||e.target;
     if(t.dataset.tab)update({tab:t.dataset.tab});
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
@@ -810,20 +728,27 @@ async function doGenerate(){
   if(S.mode==='fridge')return generateFridge();
   if(S.mode==='adapt')return generateAdapt();
   update({loading:true,error:'',recipes:[],swapState:{},servingOverrides:{}});
-  const timeStr=S.prepTime==='quick'?'Total time under 20 minutes':S.prepTime==='medium'?'Total time 20–45 minutes':S.prepTime==='relaxed'?'Total time over 45 minutes, slow-cooked or oven-baked style':'any cooking time';
   const STYLE_MAP={quick:'under 20 minutes total',easy:'very easy, minimal cooking skill needed',few_ing:'8-10 ingredients or fewer',pantry:'pantry/store-cupboard staples only, no special shopping',meal_prep:'meal-prep friendly, serves multiple days',impress:'impressive presentation, dinner-party worthy',comfort:'comfort food, hearty and warming',light:'light and fresh, low calorie',budget:'budget-friendly with simple inexpensive ingredients',weekend:'leisurely weekend cook, time is not a concern'};
   const styleStr=(S.cookStyles&&S.cookStyles.length)?S.cookStyles.map(v=>STYLE_MAP[v]||v).join(', '):'any style';
+  const timeRule=S.prepTime==='quick'?'STRICT: Total time (prep + cook combined) MUST be under 20 minutes. Only suggest dishes that genuinely take this long.':
+                 S.prepTime==='medium'?'STRICT: Total time (prep + cook combined) MUST be 20–45 minutes.':
+                 S.prepTime==='relaxed'?'Total time should be 45 minutes or more.':'No time constraint.';
   const prompt=`Generate ${S.count} kidney-friendly recipe${S.count>1?'s':''} for ${S.servings} serving${S.servings>1?'s':''}.
 Meal type: ${S.mealType==='any'?'any type':S.mealType}
 Dietary style: ${S.dietStyle}
 Restrictions: ${rText()}
-Time constraint: ${timeStr}
+Time rule: ${timeRule}
 Cooking style: ${styleStr}
 Extra requirements: ${extrasStr()}
 Units: ${unitStr()}
 
+CRITICAL RULES:
+- The prepTime and cookTime fields MUST reflect realistic actual cooking times for the dish. Do not invent or exaggerate times.
+- If a dish is inherently quick (stir-fry, salad, pasta, omelette, Pad Thai etc.), give it realistic short times even if no time constraint is set.
+- Never refuse a dish suggestion based on time if it can genuinely be made within the constraint.
+
 Respond with ONLY a valid JSON array, no explanation, no markdown fences:
-[{"name":"...","emoji":"...","servings":${S.servings},"prepTime":"10 min","cookTime":"20 min","ingredients":["200g cauliflower","..."],"instructions":["Step one...","..."],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
+[{"name":"...","emoji":"...","servings":${S.servings},"prepTime":"10 min","cookTime":"15 min","ingredients":["200g cauliflower","..."],"instructions":["Step one...","..."],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
   try{
     const t=await claudeRaw([{role:'user',content:prompt}],3000);
     const recipes=extractJSON(t);
@@ -847,14 +772,21 @@ Respond with ONLY a valid JSON array:
 }
 
 async function generateAdapt(){
-  if(!S.dishName.trim()){update({error:'Enter a dish name.'});return;}
+  if(!S.dishName.trim()){update({error:'Gib einen Gerichtsnamen ein.'});return;}
   update({loading:true,error:'',recipes:[],swapState:{},servingOverrides:{}});
-  const prompt=`Adapt the dish "${S.dishName.trim()}" into a kidney-safe version for ${S.servings} servings. Keep it recognisable. Replace every ingredient that violates restrictions.
+  const dish=S.dishName.trim();
+  const prompt=`Adapt the dish "${dish}" into a kidney-safe version for ${S.servings} servings.
 Dietary style: ${S.dietStyle}, Restrictions: ${rText()}
 Extra: ${extrasStr()}, Units: ${unitStr()}
 
+CRITICAL RULES:
+- You MUST make "${dish}" specifically. Do not substitute a different dish.
+- Keep it recognisable as "${dish}". Only replace ingredients that violate the restrictions above.
+- Set prepTime and cookTime to REALISTIC actual times for this dish. For example, Pad Thai takes ~10 min prep and ~10 min cook. Do not invent longer times.
+- If a restriction conflicts with the dish's core identity (e.g. soy sauce in a Thai dish), use a low-sodium alternative — do not abandon the dish.
+
 Respond with ONLY a valid JSON array:
-[{"name":"Kidney-Friendly ${S.dishName.trim()}","emoji":"...","servings":${S.servings},"prepTime":"...","cookTime":"...","adaptations":[{"original":"...","replacement":"...","reason":"..."}],"ingredients":["..."],"instructions":["..."],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
+[{"name":"Kidney-Friendly ${dish}","emoji":"...","servings":${S.servings},"prepTime":"...","cookTime":"...","adaptations":[{"original":"...","replacement":"...","reason":"..."}],"ingredients":["..."],"instructions":["..."],"nutrition":{${nutShape()}},"kidneyTip":"..."}]`;
   try{const t=await claudeRaw([{role:'user',content:prompt}],3000);const r=extractJSON(t);update({loading:false,recipes:Array.isArray(r)?r:[r]});}
   catch(e){update({loading:false,error:e.message});}
 }
@@ -871,27 +803,21 @@ async function doSwap(swKey,ing,ri,ctx){
 }
 
 async function doAnalyzeMenu(){
-  const hasImg=S.menuImageData||S.menuUrl.trim(),hasText=S.menuText.trim();
-  if(!hasImg&&!hasText){update({menuError:'Provide a menu photo, URL, or text.'});return;}
+  if(!S.menuText.trim()){update({menuError:'Bitte Menütext eingeben oder ein Bild auswählen.'});return;}
   update({menuLoading:true,menuError:'',menuAnalysis:null});
-  const instr=`You are a specialist renal dietitian. Analyse this restaurant menu for a kidney patient with these restrictions: ${rText()}.
-For every dish listed, rate it and explain why.
-Respond with ONLY valid JSON (no markdown, no explanation):
-{"restaurantType":"Italian","generalTips":["Ask for sauces on the side"],"dishes":[{"name":"Caesar Salad","safetyRating":"caution","safetyReason":"High in sodium from dressing and parmesan","omissions":["Ask for dressing on the side","Request no parmesan"]}]}
-Safety ratings: safe = fine as-is, caution = fine with modifications, avoid = should not eat.
-Order dishes: safe first, then caution, then avoid. Include ALL dishes mentioned.`;
+  const instr=`Du bist eine spezialisierte Nierendiätassistentin. Analysiere diese Restaurantspeisekarte für einen Nierenerkrankten mit folgenden Einschränkungen: ${rText()}.
+Bewerte jedes Gericht und erkläre warum.
+Antworte NUR mit validem JSON (kein Markdown, keine Erklärung):
+{"restaurantType":"Italienisch","generalTips":["Soße separat bestellen"],"dishes":[{"name":"Caesar Salat","safetyRating":"caution","safetyReason":"Hoher Natriumgehalt durch Dressing und Parmesan","omissions":["Dressing separat bestellen","Ohne Parmesan"]}]}
+Sicherheitsbewertungen: safe = gut wie es ist, caution = mit Anpassungen okay, avoid = sollte nicht gegessen werden.
+Reihenfolge: safe zuerst, dann caution, dann avoid. Alle genannten Gerichte einbeziehen.
+
+Speisekarte:
+${S.menuText.trim()}`;
   try{
-    let messages;
-    if(S.menuImageData){
-      messages=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:S.menuImageMime,data:S.menuImageData}},{type:'text',text:instr}]}];
-    }else if(S.menuUrl.trim()){
-      messages=[{role:'user',content:[{type:'image',source:{type:'url',url:S.menuUrl.trim()}},{type:'text',text:instr}]}];
-    }else{
-      messages=[{role:'user',content:`Menu text:\n${hasText}\n\n${instr}`}];
-    }
-    const r=await fetch(BASE+'rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages})});
+    const r=await fetch(BASE+'rk/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:2500,messages:[{role:'user',content:instr}]})});
     const data=await r.json();
-    if(!r.ok)throw new Error(data.error||'API error');
+    if(!r.ok)throw new Error(data.error||'API Fehler');
     const txt=data.content.map(b=>b.text||'').join('');
     update({menuLoading:false,menuAnalysis:extractJSON(txt)});
   }catch(e){update({menuLoading:false,menuError:e.message});}
