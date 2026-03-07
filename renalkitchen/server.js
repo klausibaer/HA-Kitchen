@@ -40,14 +40,13 @@ function writeData(key, value) {
 app.use(express.json({ limit: '10mb' }));
 
 // ── Serve the frontend (inject ingress path for HA Ingress BASE detection) ────
-// HA Ingress forwards requests to this server but tells the browser the page lives
-// at a long proxy path. We inject that path via a <meta> tag so the frontend JS
-// can build correct absolute fetch URLs regardless of environment.
+// HA Ingress sends X-Ingress-Path header. We inject it as a <meta> tag so
+// app.js can compute BASE correctly regardless of proxy depth.
 app.get('/', (req, res) => {
   const ingressPath = req.headers['x-ingress-path'] || '';
   try {
     let html = fs.readFileSync(path.join(__dirname, 'www', 'index.html'), 'utf8');
-    html = html.replace('<head>', `<head>\n<meta name="ingress-path" content="${ingressPath}">`);
+    html = html.replace('<link rel="stylesheet"', `<meta name="ingress-path" content="${ingressPath}"/>\n<link rel="stylesheet"`);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (e) {
@@ -120,7 +119,90 @@ app.get('/rk/status', (req, res) => {
   });
 });
 
-// ── API: HA Sensor push ───────────────────────────────────────────────────────
+// ── API: Pantry (fridge/storage inventory) ────────────────────────────────────
+const PANTRY_FILE = path.join(DATA_DIR, 'rk_pantry.json');
+
+function readPantry() {
+  try { return JSON.parse(fs.readFileSync(PANTRY_FILE, 'utf8')); }
+  catch { return []; }
+}
+function writePantry(items) {
+  fs.writeFileSync(PANTRY_FILE, JSON.stringify(items), 'utf8');
+}
+
+app.get('/rk/pantry', (req, res) => {
+  res.json({ items: readPantry() });
+});
+
+app.post('/rk/pantry', (req, res) => {
+  try {
+    const items = readPantry();
+    const item = { ...req.body, id: Date.now().toString(), addedAt: new Date().toISOString() };
+    items.push(item);
+    writePantry(items);
+    res.json({ item });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/rk/pantry/:id', (req, res) => {
+  try {
+    const items = readPantry();
+    const idx = items.findIndex(i => i.id === req.params.id);
+    if (idx < 0) return res.status(404).json({ error: 'Not found' });
+    items[idx] = { ...items[idx], ...req.body, id: req.params.id };
+    writePantry(items);
+    res.json({ item: items[idx] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/rk/pantry/:id', (req, res) => {
+  try {
+    const items = readPantry().filter(i => i.id !== req.params.id);
+    writePantry(items);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Bulk replace (for receipt-scan batch import)
+app.post('/rk/pantry/bulk', (req, res) => {
+  try {
+    const existing = readPantry();
+    const newItems = (req.body.items || []).map(item => ({
+      ...item, id: Date.now().toString() + Math.random(), addedAt: new Date().toISOString()
+    }));
+    writePantry([...existing, ...newItems]);
+    res.json({ added: newItems.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: HA Users (person entities) ──────────────────────────────────────────
+// Returns person.* entities from HA so profiles can be linked to real HA users.
+app.get('/rk/ha-users', async (req, res) => {
+  const token = process.env.SUPERVISOR_TOKEN;
+  if (!token) {
+    return res.json({ users: [] }); // graceful fallback when not in HA
+  }
+  try {
+    const r = await fetch('http://supervisor/core/api/states', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!r.ok) return res.json({ users: [] });
+    const states = await r.json();
+    const persons = states
+      .filter(s => s.entity_id.startsWith('person.'))
+      .map(s => ({
+        id: s.entity_id,
+        name: s.attributes.friendly_name || s.entity_id.replace('person.', ''),
+        entityId: s.entity_id,
+        picture: s.attributes.entity_picture || null,
+      }));
+    res.json({ users: persons });
+  } catch (e) {
+    res.json({ users: [], error: e.message });
+  }
+});
+
+
 // Writes entity states to HA via the Supervisor REST API.
 // Body: { sensors: [{ entity_id, state, attributes, unit, icon }] }
 
