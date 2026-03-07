@@ -1,6 +1,6 @@
 name: RenalKitchen
 description: AI-powered kidney-friendly recipe generator. Generates personalised meals based on renal dietary restrictions using Claude AI.
-version: "1.0.9"
+version: "1.0.10"
 slug: renalkitchen
 init: false
 arch:
