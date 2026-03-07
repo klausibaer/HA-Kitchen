@@ -150,7 +150,7 @@ const S={
   // profiles
   profiles:[],activeProfileId:null,
   // health goal & active profile settings
-  healthGoal:null,
+  healthGoals:[],
   name:'',preset:null,
   mealType:'any',dietStyle:'omnivore',servings:2,count:1,units:'metric',
   potassium:'none',phosphorus:'none',sodium:'none',
@@ -184,7 +184,11 @@ const S={
 };
 
 // ── Base URL (works under HA Ingress regardless of trailing slash) ─────────────
-const BASE=(()=>{const p=window.location.pathname;return p.endsWith('/')?p:p+'/';})();
+const BASE=(()=>{
+  const meta=document.querySelector('meta[name="ingress-path"]');
+  const p=(meta&&meta.content)?meta.content:window.location.pathname;
+  return p.endsWith('/')?p:p+'/';
+})();
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function apiGet(key){try{const r=await fetch(BASE+`rk/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
@@ -244,24 +248,15 @@ const SAFETY={safe:{bg:'#f0f8f1',bo:'#b8dbbe',tc:'#4a7a55',lbl:'✓ Safe'},cauti
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function goalContext(){
-  const g=HEALTH_GOALS.find(h=>h.id===S.healthGoal);
-  if(!g)return'general healthy eating';
-  const goalDescs={kidney:'kidney disease management (CKD/dialysis/transplant)',weight:'weight loss with calorie deficit',healthy:'balanced healthy eating with whole foods',diabetes:'diabetes management with low glycaemic index',heart:'cardiovascular health with low saturated fat',hypert:'hypertension management (DASH diet)',gout:'gout — low purine, reduce uric acid',stones:'kidney stone prevention',ibs:'irritable bowel syndrome (low-FODMAP)',osteo:'osteoporosis — calcium and vitamin D rich',liver:'liver disease management',custom:'custom dietary requirements'};
-  const extras=[];
-  if(S.hypertension&&g.id!=='hypert')extras.push('hypertension');
-  if(S.gout&&g.id!=='gout')extras.push('gout/low-purine');
-  if(S.ibs&&g.id!=='ibs')extras.push('IBS/low-FODMAP');
-  if(S.histamine)extras.push('histamine intolerance');
-  if(S.lactose)extras.push('lactose intolerance');
-  if(S.osteoporosis&&g.id!=='osteo')extras.push('osteoporosis');
-  if(S.liver&&g.id!=='liver')extras.push('liver condition');
-  const base=goalDescs[g.id]||g.title;
-  return extras.length?`${base} (also: ${extras.join(', ')})`:base;
+  const goalDescs={kidney:'kidney disease management (CKD/dialysis/transplant)',weight:'weight loss with calorie deficit',healthy:'balanced healthy eating with whole foods',diabetes:'diabetes management (low glycaemic index)',heart:'cardiovascular health (low saturated fat)',hypert:'hypertension management (DASH diet)',gout:'gout management (low purine)',stones:'kidney stone prevention',ibs:'irritable bowel syndrome (low-FODMAP)',osteo:'osteoporosis (calcium & vitamin D rich)',liver:'liver disease management',custom:'custom dietary requirements'};
+  const goals=(S.healthGoals||[]);
+  if(!goals.length)return'general healthy eating';
+  return goals.map(id=>{const g=HEALTH_GOALS.find(h=>h.id===id);return goalDescs[id]||(g?g.title:id);}).join(' + ');
 }
 function rText(){
-  const flags=[S.heartHealthy?'heart-healthy':'',S.diabetic?'diabetic-friendly':'',S.glutenFree?'gluten-free':'',S.lactose?'lactose-free':'',S.histamine?'low-histamine':'',S.ibs?'low-FODMAP':''].filter(Boolean).join(', ');
+  const flags=[S.heartHealthy?'heart-healthy':'',S.diabetic?'diabetic-friendly':'',S.glutenFree?'gluten-free':'',S.lactose?'lactose-free':'',S.histamine?'low-histamine':'',S.ibs?'low-FODMAP':'',S.gout?'low-purine':'',S.hypertension?'DASH/hypertension':'',S.liver?'liver-friendly':''].filter(Boolean).join(', ');
   const restr=`Potassium:${S.potassium},Phosphorus:${S.phosphorus},Sodium:${S.sodium},Calcium:${S.calcium},Fluid:${S.fluid},Protein:${S.protein},Oxalate:${S.oxalate},Purine:${S.purine}${flags?', '+flags:''}`;
-  return`Goal: ${goalContext()}. Restrictions: ${restr}${S.calorieTarget?'. Calorie target: '+S.calorieTarget+'kcal/day':''}`;
+  return`Goals: ${goalContext()}. Restrictions: ${restr}${S.calorieTarget?'. Calorie target: '+S.calorieTarget+'kcal/day':''}`;
 }function nutShape(){return`"calories":"320","protein":"22g","potassium":"250mg","phosphorus":"180mg","sodium":"280mg","calcium":"80mg"`+(S.fluid!=='none'?`,"fluid":"180ml"`:'')+`,"carbs":"45g"`;}
 function extrasStr(){return[S.heartHealthy?'heart-healthy low saturated fat':'',S.diabetic?'diabetic-friendly low glycaemic':'',S.glutenFree?'gluten-free':'',S.lactose?'lactose-free':'',S.histamine?'low-histamine':'',S.ibs?'low-FODMAP':'',S.gout?'low-purine (gout)':'',S.hypertension?'DASH diet (hypertension)':'',S.liver?'liver-friendly no alcohol':'',S.extras].filter(Boolean).join(', ')||'none';}
 function unitStr(){return S.units==='metric'?'metric (g,ml,kg)':'imperial (oz,lbs,cups,fl oz)';}
@@ -286,33 +281,62 @@ const HEALTH_GOALS=[
   {id:'custom',   icon:'✏️',title:'Eigene Einstellungen', sub:'Alle Felder manuell konfigurieren'},
 ];
 
-function applyGoalDefaults(goal){
-  const base={potassium:'none',phosphorus:'none',sodium:'none',calcium:'none',fluid:'none',protein:'moderate',oxalate:'none',purine:'none',heartHealthy:false,diabetic:false,glutenFree:false,hypertension:false,gout:false,osteoporosis:false,histamine:false,lactose:false,ibs:false,thyroid:false,liver:false,calorieTarget:0};
-  const presets={
-    kidney:  {...base,potassium:'moderate',phosphorus:'moderate',sodium:'moderate',protein:'low',heartHealthy:true,calcium:'moderate'},
-    weight:  {...base,sodium:'moderate',protein:'high',heartHealthy:true,calorieTarget:1600},
-    healthy: {...base,heartHealthy:true},
-    diabetes:{...base,sodium:'moderate',heartHealthy:true,diabetic:true},
-    heart:   {...base,sodium:'low',heartHealthy:true},
-    hypert:  {...base,sodium:'low',potassium:'none',heartHealthy:true,hypertension:true},
-    gout:    {...base,purine:'low',sodium:'moderate',gout:true},
-    stones:  {...base,oxalate:'low',sodium:'moderate',fluid:'moderate'},
-    ibs:     {...base,ibs:true},
-    osteo:   {...base,calcium:'moderate',phosphorus:'moderate',osteoporosis:true},
-    liver:   {...base,sodium:'low',heartHealthy:true,liver:true,protein:'low'},
-    custom:  {},
-  };
-  if(presets[goal])Object.assign(S,presets[goal]);
+// Restriction level ordering — higher index = more restrictive
+const RESTR_ORDER=['none','moderate','low','very_low'];
+function mostRestrictive(a,b){return RESTR_ORDER.indexOf(a)>=RESTR_ORDER.indexOf(b)?a:b;}
+// Protein: 'low' and 'high' conflict → fall back to 'moderate'
+function mergeProtein(a,b){if(a===b)return a;if((a==='low'&&b==='high')||(a==='high'&&b==='low'))return'moderate';if(a==='moderate')return b;if(b==='moderate')return a;return'moderate';}
+
+const GOAL_PRESETS={
+  kidney:  {potassium:'moderate',phosphorus:'moderate',sodium:'moderate',protein:'low',heartHealthy:true,calcium:'moderate',fluid:'none',oxalate:'none',purine:'none'},
+  weight:  {sodium:'moderate',protein:'high',heartHealthy:true,calorieTarget:1600},
+  healthy: {heartHealthy:true},
+  diabetes:{sodium:'moderate',heartHealthy:true,diabetic:true},
+  heart:   {sodium:'low',heartHealthy:true},
+  hypert:  {sodium:'low',heartHealthy:true,hypertension:true},
+  gout:    {purine:'low',sodium:'moderate',gout:true},
+  stones:  {oxalate:'low',sodium:'moderate',fluid:'moderate'},
+  ibs:     {ibs:true},
+  osteo:   {calcium:'moderate',phosphorus:'moderate',osteoporosis:true},
+  liver:   {sodium:'low',heartHealthy:true,liver:true,protein:'low'},
+  custom:  {},
+};
+
+function recomputeGoalDefaults(){
+  const goals=S.healthGoals||[];
+  // Start from neutral base
+  let merged={potassium:'none',phosphorus:'none',sodium:'none',calcium:'none',fluid:'none',protein:'moderate',oxalate:'none',purine:'none',heartHealthy:false,diabetic:false,glutenFree:false,hypertension:false,gout:false,osteoporosis:false,histamine:false,lactose:false,ibs:false,thyroid:false,liver:false,calorieTarget:0};
+  for(const id of goals){
+    const p=GOAL_PRESETS[id]||{};
+    for(const [k,v] of Object.entries(p)){
+      if(k==='protein')merged[k]=mergeProtein(merged[k],v);
+      else if(RESTR_ORDER.includes(merged[k]))merged[k]=mostRestrictive(merged[k],v);
+      else if(typeof v==='boolean')merged[k]=merged[k]||v;
+      else if(k==='calorieTarget')merged[k]=Math.max(merged[k],v);
+      else merged[k]=v;
+    }
+  }
+  Object.assign(S,merged);
+}
+
+function toggleGoal(goalId){
+  const cur=S.healthGoals||[];
+  if(cur.includes(goalId)){S.healthGoals=cur.filter(g=>g!==goalId);}
+  else{S.healthGoals=[...cur,goalId];}
+  S.preset=null;
+  recomputeGoalDefaults();
 }
 
 function profileFields(){
-  const goal=S.healthGoal;
+  const goals=S.healthGoals||[];
+  const hasGoal=id=>goals.includes(id);
+  const anyGoal=goals.length>0;
 
   // Helper: compact toggle row
   const tog=(key,label,sub)=>tRow(key,label,sub,S[key]);
 
   // Helper: calorie target input row
-  const calTarget=goal?`
+  const calTarget=anyGoal?`
     <div style="margin-bottom:.8rem">
       <div class="lbl">Kalorienziel / Tag <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.72rem;color:#8a7060">— 0 = kein Ziel</span></div>
       <div style="display:flex;align-items:center;gap:.5rem">
@@ -323,14 +347,14 @@ function profileFields(){
 
   return`
     <div style="margin-bottom:1.2rem">
-      <div class="lbl">Mein Gesundheitsziel</div>
+      <div class="lbl">Meine Ziele <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.73rem;color:var(--stone)">— mehrere möglich</span></div>
       <div>
-        ${HEALTH_GOALS.map(g=>`<button class="goal-card${goal===g.id?' active':''}" data-setgoal="${g.id}">
+        ${HEALTH_GOALS.map(g=>{const sel=(S.healthGoals||[]).includes(g.id);return`<button class="goal-card${sel?' active':''}" data-togglegoal="${g.id}">
           <span class="goal-icon">${g.icon}</span>
           <div><div style="font-size:.9rem;font-weight:600;color:var(--stone-dark)">${g.title}</div>
           <div style="font-size:.72rem;color:var(--stone);margin-top:2px">${g.sub}</div></div>
-          ${goal===g.id?`<span style="margin-left:auto;color:var(--terracotta);font-size:1rem;flex-shrink:0">✓</span>`:''}
-        </button>`).join('')}
+          <span style="margin-left:auto;font-size:1rem;flex-shrink:0;width:18px;text-align:center">${sel?'✓':''}</span>
+        </button>`}).join('')}
       </div>
     </div>
 
@@ -339,7 +363,7 @@ function profileFields(){
       <input id="pName" class="field" value="${esc(S.name)}" placeholder="z.B. Max"/>
     </div>
 
-    ${goal==='kidney'?`
+    ${hasGoal('kidney')?`
     <div class="sec-title">Nierendiät-Preset</div>
     <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.2rem">
       ${PRESET_LABELS.map(([k,l])=>`<button class="pill${S.preset===k?' active':''}" data-ppset="${k}" style="font-size:.75rem">${l}</button>`).join('')}
@@ -361,7 +385,7 @@ function profileFields(){
       ${tog('glutenFree','Glutenfrei','Zöliakie oder Glutenunverträglichkeit')}
     </div>`:''}
 
-    ${goal==='weight'?`
+    ${hasGoal('weight')?`
     <div class="sec-title">Gewichtsabnahme</div>
     ${rChip('Protein','protein',[['high','Hoch 1,2g/kg — sättigt länger'],['moderate','Moderat 0,8g/kg']])}
     ${rChip('Natrium','sodium',[['none','Keine Einschränkung'],['moderate','Moderat — weniger Wasserretention']])}
@@ -372,7 +396,7 @@ function profileFields(){
       ${tog('glutenFree','Glutenfrei','Zöliakie oder Überempfindlichkeit')}
     </div>`:''}
 
-    ${goal==='healthy'?`
+    ${hasGoal('healthy')?`
     <div class="sec-title">Gesunde Ernährung</div>
     ${rChip('Protein','protein',[['moderate','Moderat 0,8g/kg'],['high','Hoch 1,2g/kg']])}
     ${rChip('Natrium','sodium',[['none','Keine Einschränkung'],['moderate','Moderat']])}
@@ -384,7 +408,7 @@ function profileFields(){
       ${tog('histamine','Histaminarm','Histaminintoleranz')}
     </div>`:''}
 
-    ${goal==='diabetes'?`
+    ${hasGoal('diabetes')?`
     <div class="sec-title">Diabetes</div>
     ${rChip('Natrium','sodium',[['moderate','Moderat'],['none','Keine Einschränkung']])}
     ${rChip('Protein','protein',[['moderate','Moderat 0,8g/kg'],['high','Hoch 1,2g/kg']])}
@@ -395,7 +419,7 @@ function profileFields(){
       ${tog('hypertension','Bluthochdruck','Zusätzliche Natriumreduktion')}
     </div>`:''}
 
-    ${goal==='heart'?`
+    ${hasGoal('heart')?`
     <div class="sec-title">Herzgesundheit</div>
     ${rChip('Natrium','sodium',[['low','Niedrig — Blutdruckkontrolle'],['moderate','Moderat'],['none','Keine']])}
     ${rChip('Protein','protein',[['moderate','Moderat 0,8g/kg'],['high','Hoch 1,2g/kg']])}
@@ -405,7 +429,7 @@ function profileFields(){
       ${tog('hypertension','Bluthochdruck','Mehr Natrium- & Kaliumfokus')}
     </div>`:''}
 
-    ${goal==='hypert'?`
+    ${hasGoal('hypert')?`
     <div class="sec-title">Bluthochdruck (DASH-Diät)</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#f0f8fb;border:1px solid #b8d8ec;border-radius:9px;font-size:.8rem;color:#3a6a8a;line-height:1.5">
       💡 Die DASH-Diät senkt den Blutdruck durch viel Kalium (Obst, Gemüse), wenig Natrium und gesättigte Fette.
@@ -419,7 +443,7 @@ function profileFields(){
       ${tog('diabetic','Zuckerkontrolle','Niedriger GI')}
     </div>`:''}
 
-    ${goal==='gout'?`
+    ${hasGoal('gout')?`
     <div class="sec-title">Gicht</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#fff8f0;border:1px solid #f0d0a8;border-radius:9px;font-size:.8rem;color:#8a5a20;line-height:1.5">
       💡 Purinarme Ernährung reduziert Harnsäure. Innereien, rotes Fleisch, Meeresfrüchte und Alkohol strikt meiden.
@@ -432,7 +456,7 @@ function profileFields(){
       ${tog('heartHealthy','Herzfreundlich','Gicht erhöht Herzrisiko')}
     </div>`:''}
 
-    ${goal==='stones'?`
+    ${hasGoal('stones')?`
     <div class="sec-title">Nierensteine</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#f0f8f1;border:1px solid #b8dbbe;border-radius:9px;font-size:.8rem;color:#4a7a55;line-height:1.5">
       💡 Mind. 2–3L Wasser täglich ist die wirksamste Maßnahme gegen Nierensteine aller Art.
@@ -446,7 +470,7 @@ function profileFields(){
       ${tog('heartHealthy','Herzfreundlich','')}
     </div>`:''}
 
-    ${goal==='ibs'?`
+    ${hasGoal('ibs')?`
     <div class="sec-title">Reizdarm / IBS</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#f8f5fc;border:1px solid #d0c0e8;border-radius:9px;font-size:.8rem;color:#6a4a90;line-height:1.5">
       💡 Low-FODMAP reduziert fermentierbare Kohlenhydrate, die bei IBS Symptome auslösen können.
@@ -459,7 +483,7 @@ function profileFields(){
       ${tog('histamine','Histaminarm','Histaminintoleranz')}
     </div>`:''}
 
-    ${goal==='osteo'?`
+    ${hasGoal('osteo')?`
     <div class="sec-title">Osteoporose</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#fdf8f0;border:1px solid #e8d8b0;border-radius:9px;font-size:.8rem;color:#8a6820;line-height:1.5">
       💡 Kalzium + Vitamin D + Protein schützen die Knochendichte. Wenig Salz und Phosphat helfen Kalzium zu halten.
@@ -473,7 +497,7 @@ function profileFields(){
       ${tog('heartHealthy','Herzfreundlich','')}
     </div>`:''}
 
-    ${goal==='liver'?`
+    ${hasGoal('liver')?`
     <div class="sec-title">Lebererkrankung</div>
     <div style="margin-bottom:.8rem;padding:.65rem .9rem;background:#f5f0ea;border:1px solid #d8c8a8;border-radius:9px;font-size:.8rem;color:#6a5030;line-height:1.5">
       💡 Bei Leberzirrhose zusätzlich Proteineinschränkung ärztlich klären. Kein Alkohol.
@@ -487,7 +511,7 @@ function profileFields(){
       ${tog('diabetic','Zuckerkontrolle','Hepatische Insulinresistenz häufig')}
     </div>`:''}
 
-    ${goal==='custom'?`
+    ${hasGoal('custom')?`
     <div class="sec-title">Alle Einstellungen</div>
     ${rChip('Kalium','potassium',[['none','Keine'],['moderate','Moderat'],['low','Niedrig'],['very_low','Sehr niedrig']])}
     ${rChip('Phosphor','phosphorus',[['none','Keine'],['moderate','Moderat'],['low','Niedrig']])}
@@ -512,7 +536,7 @@ function profileFields(){
     </div>
     ${calTarget}`:''}
 
-    ${goal?`
+    ${anyGoal?`
     <div class="sec-title">Präferenzen</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
       <div><div class="lbl">Einheiten</div><select id="pUnits" class="field">${opts([['metric','Metrisch'],['imperial','Imperial']],S.units)}</select></div>
@@ -531,7 +555,7 @@ function renderProfile(){
     ${hasSaved?`<div style="margin-bottom:1.2rem">
       <div class="lbl">Profil wechseln</div>
       <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem">
-        ${S.profiles.map(p=>{const g=HEALTH_GOALS.find(h=>h.id===p.healthGoal);return`<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:9px;border:1.5px solid ${p.id===S.activeProfileId?'#c4684a':'#e8d8c8'};background:${p.id===S.activeProfileId?'#fff5ee':'white'};cursor:pointer" data-switchprofile="${p.id}">
+        ${S.profiles.map(p=>{const pGoals=(p.healthGoals||(p.healthGoal?[p.healthGoal]:[]));const gArr=pGoals.map(id=>HEALTH_GOALS.find(h=>h.id===id)).filter(Boolean);const g=gArr[0]||null;return`<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:9px;border:1.5px solid ${p.id===S.activeProfileId?'#c4684a':'#e8d8c8'};background:${p.id===S.activeProfileId?'#fff5ee':'white'};cursor:pointer" data-switchprofile="${p.id}">
           ${g?`<span style="font-size:1.2rem">${g.icon}</span>`:''}
           <div style="flex:1">
             <div style="font-size:.86rem;font-weight:${p.id===S.activeProfileId?600:400};color:${p.id===S.activeProfileId?'#c4684a':'#2d1f17'}">${esc(p.name||'Unnamed')}</div>
@@ -554,7 +578,7 @@ function renderProfile(){
   document.querySelectorAll('[data-rchip]').forEach(sel=>{sel.addEventListener('change',e=>{S[e.target.dataset.rchip]=e.target.value;renderProfile();});});
   document.querySelectorAll('#profileBody [data-toggle]').forEach(el=>{el.addEventListener('click',()=>{const k=el.dataset.toggle;S[k]=!S[k];renderProfile();});});
   document.querySelectorAll('[data-ppset]').forEach(btn=>{btn.addEventListener('click',()=>applyPreset(btn.dataset.ppset));});
-  document.querySelectorAll('[data-setgoal]').forEach(btn=>{btn.addEventListener('click',()=>{const g=btn.dataset.setgoal;applyGoalDefaults(g);S.healthGoal=g;S.preset=null;renderProfile();});});
+  document.querySelectorAll('[data-togglegoal]').forEach(btn=>{btn.addEventListener('click',()=>{toggleGoal(btn.dataset.togglegoal);renderProfile();});});
   document.querySelectorAll('[data-switchprofile]').forEach(el=>{el.addEventListener('click',e=>{if(e.target.dataset.deleteprofile)return;loadProfile(el.dataset.switchprofile);});});
   document.querySelectorAll('[data-deleteprofile]').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();deleteProfile(btn.dataset.deleteprofile);});});
   const nb=document.getElementById('newProfileBtn');if(nb)nb.addEventListener('click',newProfile);
@@ -589,7 +613,9 @@ function buildApp(){
   const profileInitials=S.name?S.name[0].toUpperCase():'👤';
   const profileName=S.name||(S.profiles.length>1?`${S.profiles.length} profiles`:'Profil einrichten');
   const favCount=S.favs.length>0?`<span style="background:#c4684a;color:white;border-radius:999px;font-size:.65rem;padding:.1rem .4rem;font-weight:600;margin-left:.3rem">${S.favs.length}</span>`:'';
-  const goalObj=HEALTH_GOALS.find(g=>g.id===S.healthGoal)||null;  return`<div style="background:var(--cream);min-height:100vh">
+  const goalObjs=(S.healthGoals||[]).map(id=>HEALTH_GOALS.find(g=>g.id===id)).filter(Boolean);
+  const tagline=goalObjs.length===0?'Smarter <em style="color:var(--terracotta);font-style:italic">essen</em>':goalObjs.length===1?goalObjs[0].icon+' <em style="color:var(--terracotta);font-style:italic">'+goalObjs[0].title+'</em>':goalObjs.map(g=>g.icon).join(' ')+'<em style="color:var(--terracotta);font-style:italic"> '+goalObjs.length+' Ziele</em>';
+  return`<div style="background:var(--cream);min-height:100vh">
   <div style="background:linear-gradient(160deg,#fff5ec,var(--warm-white) 60%);border-bottom:1px solid var(--border);box-shadow:0 2px 16px var(--shadow)">
     <div style="max-width:880px;margin:0 auto;padding:1.1rem 1.2rem .9rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
       <div>
@@ -597,7 +623,7 @@ function buildApp(){
           <div style="width:26px;height:26px;background:linear-gradient(135deg,var(--terracotta),var(--terra-light));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem;box-shadow:0 2px 6px rgba(196,104,74,.3)">🍽</div>
           <span style="font-family:Georgia,serif;font-size:.88rem;color:var(--stone);letter-spacing:.3px">RenalKitchen</span>
         </div>
-        <div style="font-family:Georgia,serif;font-size:clamp(1.2rem,4vw,1.7rem);color:var(--stone-dark);line-height:1.15">${goalObj?goalObj.icon+' <em style="color:var(--terracotta);font-style:italic">'+goalObj.title+'</em>':'Smarter <em style="color:var(--terracotta);font-style:italic">essen</em>'}</div>
+        <div style="font-family:Georgia,serif;font-size:clamp(1.2rem,4vw,1.7rem);color:var(--stone-dark);line-height:1.15">${tagline}</div>
       </div>
       <button id="openProfileBtn" style="display:flex;flex-direction:column;align-items:center;gap:.3rem;border:none;background:none;cursor:pointer;flex-shrink:0">
         <div class="profile-avatar${S.profileOpen?' active':''}" style="background:linear-gradient(135deg,var(--terracotta),var(--terra-light));width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${S.name?'1.05rem':'1rem'};font-weight:700;color:white;box-shadow:0 3px 10px rgba(196,104,74,.35)">${profileInitials}</div>
@@ -623,8 +649,8 @@ function buildApp(){
 }
 
 function buildProfileSummary(){
-  const goalObj=HEALTH_GOALS.find(g=>g.id===S.healthGoal);
-  if(!S.healthGoal){
+  const goalObjs2=(S.healthGoals||[]).map(id=>HEALTH_GOALS.find(g=>g.id===id)).filter(Boolean);
+  if(!goalObjs2.length){
     return`<div style="background:linear-gradient(135deg,#fff5ee,#fff0e8);border:1px solid #e8937a;border-radius:10px;padding:.65rem 1rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
       <div style="font-size:.83rem;color:#8a7060">Kein Ziel gesetzt — <strong style="color:#c4684a">Profil antippen</strong> um loszulegen</div>
       <button id="openProfileBtn2" style="padding:.3rem .75rem;background:#c4684a;color:white;border:none;border-radius:7px;font-size:.78rem;cursor:pointer;white-space:nowrap">Einrichten ↗</button>
@@ -648,8 +674,7 @@ function buildProfileSummary(){
   if(S.lactose)chips.push({l:'Lak',c:'#6a8a9b'});
   if(S.calorieTarget>0)chips.push({l:S.calorieTarget+'kcal',c:'#c4684a'});
   return`<div style="background:linear-gradient(135deg,#fff5ee,#fff0e8);border:1px solid #e8937a;border-radius:10px;padding:.55rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-    <span style="font-size:1.1rem">${goalObj.icon}</span>
-    <span style="font-size:.82rem;font-weight:600;color:#c4684a">${goalObj.title}</span>
+    ${goalObjs2.map(g=>`<span style="font-size:1rem">${g.icon}</span><span style="font-size:.8rem;font-weight:600;color:#c4684a">${g.title}</span>`).join('<span style="color:#e8d0c0">·</span>')}
     ${chips.map(c=>`<span style="padding:.18rem .5rem;background:${c.c}22;border:1px solid ${c.c}44;border-radius:999px;font-size:.72rem;color:${c.c};font-weight:600">${c.l}</span>`).join('')}
     ${S.name?`<span style="margin-left:auto;font-size:.74rem;color:#8a7060;font-style:italic">${esc(S.name)}</span>`:''}
   </div>`;
@@ -1292,7 +1317,7 @@ function applyPreset(k){
 }
 
 function profileSnapshot(){
-  return{id:S.activeProfileId||Date.now().toString(),healthGoal:S.healthGoal,name:S.name,preset:S.preset,
+  return{id:S.activeProfileId||Date.now().toString(),healthGoals:S.healthGoals||[],name:S.name,preset:S.preset,
     potassium:S.potassium,phosphorus:S.phosphorus,sodium:S.sodium,calcium:S.calcium,fluid:S.fluid,
     protein:S.protein,oxalate:S.oxalate,purine:S.purine,
     heartHealthy:S.heartHealthy,diabetic:S.diabetic,glutenFree:S.glutenFree,
@@ -1302,7 +1327,9 @@ function profileSnapshot(){
     units:S.units,dietStyle:S.dietStyle,extras:S.extras};
 }
 function loadProfileData(p){
-  Object.assign(S,{activeProfileId:p.id,healthGoal:p.healthGoal||null,name:p.name||'',preset:p.preset||null,
+  // Migrate old single-goal profiles: {healthGoal:'kidney'} → {healthGoals:['kidney']}
+  const healthGoals=p.healthGoals||(p.healthGoal?[p.healthGoal]:[]);
+  Object.assign(S,{activeProfileId:p.id,healthGoals,name:p.name||'',preset:p.preset||null,
     potassium:p.potassium||'none',phosphorus:p.phosphorus||'none',sodium:p.sodium||'none',
     calcium:p.calcium||'none',fluid:p.fluid||'none',protein:p.protein||'moderate',
     oxalate:p.oxalate||'none',purine:p.purine||'none',
@@ -1318,7 +1345,7 @@ function loadProfile(id){
 }
 function newProfile(){
   S.activeProfileId=Date.now().toString();
-  Object.assign(S,{healthGoal:null,name:'',preset:null,potassium:'none',phosphorus:'none',sodium:'none',calcium:'none',fluid:'none',protein:'moderate',oxalate:'none',purine:'none',heartHealthy:false,diabetic:false,glutenFree:false,hypertension:false,gout:false,osteoporosis:false,histamine:false,lactose:false,ibs:false,thyroid:false,liver:false,calorieTarget:0,dietStyle:'omnivore',extras:''});
+  Object.assign(S,{healthGoals:[],name:'',preset:null,potassium:'none',phosphorus:'none',sodium:'none',calcium:'none',fluid:'none',protein:'moderate',oxalate:'none',purine:'none',heartHealthy:false,diabetic:false,glutenFree:false,hypertension:false,gout:false,osteoporosis:false,histamine:false,lactose:false,ibs:false,thyroid:false,liver:false,calorieTarget:0,dietStyle:'omnivore',extras:''});
   renderProfile();
 }
 async function deleteProfile(id){
