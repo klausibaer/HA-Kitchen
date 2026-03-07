@@ -39,7 +39,21 @@ function writeData(key, value) {
 
 app.use(express.json({ limit: '10mb' }));
 
-// Serve the frontend
+// ── Serve the frontend (inject ingress path for HA Ingress BASE detection) ────
+// HA Ingress forwards requests to this server but tells the browser the page lives
+// at a long proxy path. We inject that path via a <meta> tag so the frontend JS
+// can build correct absolute fetch URLs regardless of environment.
+app.get('/', (req, res) => {
+  const ingressPath = req.headers['x-ingress-path'] || '';
+  try {
+    let html = fs.readFileSync(path.join(__dirname, 'www', 'index.html'), 'utf8');
+    html = html.replace('<head>', `<head>\n<meta name="ingress-path" content="${ingressPath}">`);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (e) {
+    res.status(500).send('Failed to load index.html: ' + e.message);
+  }
+});
 app.use(express.static(path.join(__dirname, 'www')));
 
 // ── API: Storage ──────────────────────────────────────────────────────────────
