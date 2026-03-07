@@ -4,7 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>RenalKitchen</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -357,6 +356,76 @@ function profileFields(){
         </button>`}).join('')}
       </div>
     </div>
+
+    ${goals.length>=2?`
+    <div id="tradeoffPanel" style="margin-bottom:1.2rem;border-radius:12px;overflow:hidden;border:1px solid #e0d0c0">
+      <div style="background:linear-gradient(135deg,#fff5ee,#fef0e4);padding:.65rem 1rem;display:flex;align-items:center;gap:.5rem;border-bottom:1px solid #e8d8c8">
+        <span style="font-size:1rem">⚖️</span>
+        <span style="font-size:.82rem;font-weight:600;color:#8a5030">Ziel-Kombinationen & Kompromisse</span>
+      </div>
+      <div style="padding:.75rem 1rem;background:var(--warm-white)">
+        ${(()=>{
+          const CONFLICTS=[
+            {a:'weight',b:'kidney',icon:'⚖️🫘',msg:'Hoher Protein-Bedarf (Gewicht) vs. niedriger Protein-Bedarf (Niere) — hier wurde <strong>moderat</strong> als Kompromiss gesetzt.'},
+            {a:'weight',b:'liver',icon:'⚖️🟤',msg:'Hoher Protein-Bedarf (Gewicht) vs. niedriger Protein-Bedarf (Leber) — Kompromiss: <strong>moderat</strong>.'},
+            {a:'gout',b:'osteo',icon:'🦶🦴',msg:'Purinarme Kost (Gicht) schränkt Hülsenfrüchte & Fleisch ein, die auch Kalziumquellen sein können. Milchprodukte bevorzugen.'},
+            {a:'kidney',b:'osteo',icon:'🫘🦴',msg:'Phosphoreinschränkung (Niere) kann Kalziumaufnahme hemmen. Phosphatarme Kalziumquellen wählen.'},
+            {a:'ibs',b:'osteo',icon:'🌿🦴',msg:'Low-FODMAP meidet viele Milchprodukte (Kalziumquelle). Laktosefreie Alternativen oder Anreicherung nötig.'},
+            {a:'diabetes',b:'heart',icon:'💉❤️',msg:'Gute Kombi: beide profitieren von Ballaststoffen, niedrigem GI und wenig gesättigten Fetten.'},
+            {a:'heart',b:'hypert',icon:'❤️🩺',msg:'Starke Synergie: beide profitieren von DASH-Prinzipien — wenig Natrium, viel Kalium, herzfreundliche Fette.'},
+            {a:'kidney',b:'hypert',icon:'🫘🩺',msg:'Achtung: DASH empfiehlt <em>viel Kalium</em>, Nierenkrankheit erfordert <em>wenig Kalium</em> — Kaliumlevel ärztlich klären.'},
+            {a:'gout',b:'kidney',icon:'🦶🫘',msg:'Gute Kombi: beide profitieren von purinarmer, natriumarmer Kost und viel Flüssigkeit.'},
+            {a:'ibs',b:'healthy',icon:'🌿🥗',msg:'Low-FODMAP schränkt manche "gesunden" Lebensmittel ein (z.B. Zwiebeln, Hülsenfrüchte). Ausreichend Abwechslung achten.'},
+          ];
+          const synergies=[
+            {a:'heart',b:'diabetes',note:'Starke Synergie'},
+            {a:'heart',b:'hypert',note:'Starke Synergie'},
+            {a:'weight',b:'diabetes',note:'Gut kombinierbar'},
+            {a:'gout',b:'kidney',note:'Gut kombinierbar'},
+          ];
+          const rows=[];
+          for(let i=0;i<goals.length;i++){
+            for(let j=i+1;j<goals.length;j++){
+              const a=goals[i],b=goals[j];
+              const cf=CONFLICTS.find(c=>(c.a===a&&c.b===b)||(c.a===b&&c.b===a));
+              if(cf){
+                const isWarn=cf.msg.includes('Achtung');
+                rows.push(`<div style="display:flex;gap:.7rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid #f0e8e0">
+                  <span style="font-size:1.1rem;flex-shrink:0;margin-top:.1rem">${isWarn?'⚠️':cf.icon}</span>
+                  <div style="font-size:.79rem;color:#5c3d2e;line-height:1.55">${cf.msg}</div>
+                </div>`);
+              } else {
+                const syn=synergies.find(s=>(s.a===a&&s.b===b)||(s.a===b&&s.b===a));
+                const g1=HEALTH_GOALS.find(h=>h.id===a),g2=HEALTH_GOALS.find(h=>h.id===b);
+                if(syn){
+                  rows.push(`<div style="display:flex;gap:.7rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid #f0e8e0">
+                    <span style="font-size:1.1rem;flex-shrink:0;margin-top:.1rem">✅</span>
+                    <div style="font-size:.79rem;color:#3a6a40;line-height:1.55"><strong>${syn.note}</strong> — ${g1?.icon||''} ${g1?.title||a} + ${g2?.icon||''} ${g2?.title||b} ergänzen sich.</div>
+                  </div>`);
+                }
+              }
+            }
+          }
+          // Always show merged settings summary
+          const RESTR_LABELS={none:'—',moderate:'Moderat',low:'Niedrig',very_low:'Sehr niedrig',high:'Hoch',strict:'Strikt'};
+          const active=[
+            S.sodium!=='none'&&`Na: ${RESTR_LABELS[S.sodium]||S.sodium}`,
+            S.potassium!=='none'&&`K: ${RESTR_LABELS[S.potassium]||S.potassium}`,
+            S.phosphorus!=='none'&&`P: ${RESTR_LABELS[S.phosphorus]||S.phosphorus}`,
+            S.protein!=='moderate'&&`Protein: ${RESTR_LABELS[S.protein]||S.protein}`,
+            S.oxalate!=='none'&&`Oxalat: ${RESTR_LABELS[S.oxalate]||S.oxalate}`,
+            S.purine!=='none'&&`Purin: ${RESTR_LABELS[S.purine]||S.purine}`,
+            S.calcium!=='none'&&`Ca: ${RESTR_LABELS[S.calcium]||S.calcium}`,
+            S.fluid!=='none'&&`Flüssigkeit: ${RESTR_LABELS[S.fluid]||S.fluid}`,
+          ].filter(Boolean);
+          const summary=`<div style="margin-top:.35rem;padding:.45rem .6rem;background:#f5ede8;border-radius:8px;font-size:.75rem;color:#8a5030">
+            <strong>Gesamte Einschränkungen (aus allen Zielen zusammengefasst):</strong><br/>
+            ${active.length?active.join(' · '):'Keine aktiven Einschränkungen'}${S.calorieTarget?' · Ziel: '+S.calorieTarget+' kcal/Tag':''}
+          </div>`;
+          return (rows.length?rows.join(''):'<div style="font-size:.79rem;color:#8a7060;padding:.3rem 0">Keine direkten Konflikte zwischen den gewählten Zielen.</div>')+summary;
+        })()}
+      </div>
+    </div>`:''}
 
     <div style="margin-bottom:1rem">
       <div class="lbl">Name</div>
@@ -1136,105 +1205,54 @@ async function handleFavSave(i){
 }
 function initGlobalEvents(){
 
-  // ── Tesseract OCR ───────────────────────────────────────────────────────────
-  let ocrWorker=null;
-  async function getOcrWorker(){
-    if(ocrWorker)return ocrWorker;
-    ocrWorker=await Tesseract.createWorker(['deu','eng'],1,{
-      logger:m=>{if(m.status==='recognizing text')update({ocrProgress:m.progress*100});}
+  // ── Claude Vision OCR (no CDN, no WASM — uses existing Claude proxy) ────────
+  async function ocrImageWithClaude(file){
+    return new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
+      reader.onload=async ev=>{
+        try{
+          const b64=ev.target.result.split(',')[1];
+          const mime=file.type||'image/jpeg';
+          const r=await fetch(BASE+'rk/claude',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              max_tokens:1500,
+              messages:[{role:'user',content:[
+                {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+                {type:'text',text:'Extract ALL text visible in this menu image, preserving the structure (sections, dish names, prices, descriptions). Output only the raw transcribed text. Do not summarise or translate.'}
+              ]}]
+            })
+          });
+          const data=await r.json();
+          if(!r.ok)throw new Error(data.error||'Claude API error');
+          resolve(data.content.map(b=>b.text||'').join('').trim());
+        }catch(e){reject(e);}
+      };
+      reader.readAsDataURL(file);
     });
-    // Tesseract params: treat as single uniform block, PSM 6 = uniform block of text
-    await ocrWorker.setParameters({'tessedit_pageseg_mode':'6'});
-    return ocrWorker;
-  }
-
-  // Preprocess image on canvas: scale up, grayscale, auto-invert dark bg, adaptive binarize
-  function preprocessImage(imgEl){
-    const SCALE=2;
-    const sw=imgEl.naturalWidth, sh=imgEl.naturalHeight;
-    const w=sw*SCALE, h=sh*SCALE;
-    const cv=document.createElement('canvas');
-    cv.width=w; cv.height=h;
-    const ctx=cv.getContext('2d');
-    ctx.drawImage(imgEl,0,0,w,h);
-
-    const id=ctx.getImageData(0,0,w,h);
-    const d=id.data;
-
-    // Step 1: Convert to grayscale in-place
-    for(let i=0;i<d.length;i+=4){
-      const g=Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
-      d[i]=d[i+1]=d[i+2]=g; d[i+3]=255;
-    }
-
-    // Step 2: Detect dark background by sampling middle vertical band
-    // (avoids bright food photos which appear at top/bottom of menu cells)
-    let darkCount=0, sampleCount=0;
-    const y0=Math.floor(h*0.25), y1=Math.floor(h*0.75);
-    for(let y=y0;y<y1;y+=12){
-      for(let x=0;x<w;x+=12){
-        if(d[(y*w+x)*4]<100)darkCount++;
-        sampleCount++;
-      }
-    }
-    const isDark=(darkCount/sampleCount)>0.30;
-    if(isDark){
-      for(let i=0;i<d.length;i+=4){d[i]=d[i+1]=d[i+2]=255-d[i];}
-    }
-
-    // Step 3: Adaptive binarize — normalize full range to 0-255, threshold at 128
-    // Collect p5/p95 from pixel values
-    const vals=new Uint8Array(Math.ceil(d.length/16));
-    for(let i=0,j=0;i<d.length;i+=16,j++)vals[j]=d[i];
-    vals.sort();
-    const p5=vals[Math.floor(vals.length*0.05)];
-    const p95=vals[Math.floor(vals.length*0.95)];
-    const range=Math.max(p95-p5,1);
-    for(let i=0;i<d.length;i+=4){
-      const norm=Math.min(255,Math.max(0,((d[i]-p5)/range)*255));
-      const bin=norm<128?0:255;
-      d[i]=d[i+1]=d[i+2]=bin;
-    }
-
-    ctx.putImageData(id,0,0);
-    return cv;
   }
 
   async function runOcrQueue(files){
-    // Add all files to queue as pending
     const newImgs=Array.from(files).map(f=>({
-      id: Date.now()+Math.random(),
-      name: f.name,
-      status:'pending',
-      file:f,
-      text:''
+      id:String(Date.now()+Math.random()),
+      name:f.name,status:'pending',file:f,text:''
     }));
-    update({menuImages:[...S.menuImages,...newImgs]});
+    // snapshot files now before input is cleared
+    update({menuImages:[...S.menuImages,...newImgs],ocrLoading:true});
 
-    // Process sequentially
     for(const img of newImgs){
-      // Mark active
       img.status='active';
       update({menuImages:[...S.menuImages],ocrProgress:0});
       try{
-        const blobUrl=URL.createObjectURL(img.file);
-        const imgEl=await new Promise((res,rej)=>{
-          const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=blobUrl;
-        });
-        URL.revokeObjectURL(blobUrl);
-        const canvas=preprocessImage(imgEl);
-        const worker=await getOcrWorker();
-        const{data:{text}}=await worker.recognize(canvas);
-        const cleaned=text.replace(/\f/g,'\n').split('\n').map(l=>l.trim())
-          .filter(l=>l.length>1&&!/^[^a-zA-ZäöüÄÖÜß0-9]+$/.test(l))
-          .join('\n').replace(/\n{3,}/g,'\n\n').trim();
-        img.text=cleaned;
+        const text=await ocrImageWithClaude(img.file);
+        img.text=text;
         img.status='done';
       }catch(err){
-        img.status='error';
-        img.text='';
+        img.status='error';img.text='';
+        console.error('OCR failed:',img.name,err.message);
       }
-      // Combine all done texts
       const combined=S.menuImages.filter(i=>i.status==='done'&&i.text)
         .map(i=>i.text).join('\n\n---\n\n');
       update({menuImages:[...S.menuImages],menuText:combined,ocrProgress:100});
