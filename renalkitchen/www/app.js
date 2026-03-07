@@ -709,7 +709,7 @@ function buildMenu(){
 
   return`<div><div class="card">
     <div class="sec-title">Restaurant-Menü analysieren</div>
-    <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Mehrere Fotos hochladen — Text wird auf deinem Gerät erkannt und kombiniert. Kein Bild wird gesendet.</p>
+    <p style="font-size:.83rem;color:#8a7060;margin-bottom:1.1rem;line-height:1.5">Speisekarten-Fotos hochladen — Claude liest den Text direkt aus den Bildern. Mehrere Bilder werden kombiniert.</p>
 
     <div style="margin-bottom:1.1rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.55rem">
@@ -717,9 +717,20 @@ function buildMenu(){
         ${imgs.length?`<button data-clearallimgs="1" style="border:none;background:none;cursor:pointer;font-size:.75rem;color:var(--stone)">Alle löschen</button>`:''}
       </div>
       ${imgQueue}
+      ${anyActive?`
+        <div style="background:var(--terra-faint);border:1px solid #e8937a;border-radius:10px;padding:.75rem 1rem;margin-bottom:.4rem">
+          <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
+            <span style="font-size:1.1rem;animation:spin 1s linear infinite;display:inline-block">⟳</span>
+            <span style="font-size:.84rem;font-weight:600;color:var(--terracotta)">Claude liest Bilder…</span>
+          </div>
+          <div style="height:4px;background:#f0d0c0;border-radius:2px;overflow:hidden">
+            <div style="height:100%;background:var(--terracotta);border-radius:2px;animation:pulse 1.5s ease-in-out infinite;width:60%"></div>
+          </div>
+        </div>
+      `:''}
       <button id="photoBtn" style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:var(--warm-white);border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--stone-dark);font-weight:500;transition:border-color .2s" ${anyActive?'disabled':''}>
         <span style="font-size:1.3rem">🖼️</span>
-        <div style="text-align:left"><div>${anyActive?'Claude liest Bilder…':'Bilder auswählen (mehrere möglich)'}</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Claude erkennt Text direkt aus dem Foto</div></div>
+        <div style="text-align:left"><div>${anyActive?'Weitere Bilder nach Abschluss':'Bilder auswählen (mehrere möglich)'}</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Claude erkennt Text direkt aus dem Foto</div></div>
       </button>
     </div>
 
@@ -1349,64 +1360,65 @@ async function handleFavSave(i){
   await apiSet('favourites',S.favs);
   update({editingFav:null});
 }
-function initGlobalEvents(){
-
-  // ── Claude Vision OCR (no CDN, no WASM — uses existing Claude proxy) ────────
-  async function ocrImageWithClaude(file, customPrompt){
-    return new Promise((resolve,reject)=>{
-      const reader=new FileReader();
-      reader.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
-      reader.onload=async ev=>{
-        try{
-          const b64=ev.target.result.split(',')[1];
-          const mime=file.type||'image/jpeg';
-          const prompt=customPrompt||'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
-          const r=await fetch(BASE+'rk/claude',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-              max_tokens:1500,
-              messages:[{role:'user',content:[
-                {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-                {type:'text',text:prompt}
-              ]}]
-            })
-          });
-          const data=await r.json();
-          if(!r.ok)throw new Error(data.error||'Claude API error');
-          resolve(data.content.map(b=>b.text||'').join('').trim());
-        }catch(e){reject(e);}
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function runOcrQueue(files){
-    // files is already an Array (copied before input was cleared)
-    const newImgs=files.map(f=>({
-      id:String(Date.now()+Math.random()),
-      name:f.name,status:'pending',file:f,text:''
-    }));
-    // snapshot files now before input is cleared
-    update({menuImages:[...S.menuImages,...newImgs],ocrLoading:true});
-
-    for(const img of newImgs){
-      img.status='active';
-      update({menuImages:[...S.menuImages],ocrProgress:0});
+// ── Claude Vision OCR — top-level so doScanReceipt and menu tab can both call it
+async function ocrImageWithClaude(file, customPrompt){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
+    reader.onload=async ev=>{
       try{
-        const text=await ocrImageWithClaude(img.file);
-        img.text=text;
-        img.status='done';
-      }catch(err){
-        img.status='error';img.text='';img.errorMsg=err.message;
-        console.error('OCR failed:',img.name,err.message);
-      }
-      const combined=S.menuImages.filter(i=>i.status==='done'&&i.text)
-        .map(i=>i.text).join('\n\n---\n\n');
-      update({menuImages:[...S.menuImages],menuText:combined,ocrProgress:100});
+        const b64=ev.target.result.split(',')[1];
+        const mime=file.type||'image/jpeg';
+        const prompt=customPrompt||'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
+        const r=await fetch(BASE+'rk/claude',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            max_tokens:1500,
+            messages:[{role:'user',content:[
+              {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+              {type:'text',text:prompt}
+            ]}]
+          })
+        });
+        const data=await r.json();
+        if(!r.ok)throw new Error(data.error||'Claude API error');
+        resolve(data.content.map(b=>b.text||'').join('').trim());
+      }catch(e){reject(e);}
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function runOcrQueue(files){
+  const newImgs=files.map(f=>({
+    id:String(Date.now()+Math.random()),
+    name:f.name,status:'pending',file:f,text:''
+  }));
+  update({menuImages:[...S.menuImages,...newImgs],ocrLoading:true});
+
+  for(const img of newImgs){
+    // Mutate in place then spread to trigger reactivity
+    img.status='active';
+    update({menuImages:[...S.menuImages],ocrProgress:0});
+    // yield to browser so the 'active' chip actually paints before the await
+    await new Promise(r=>setTimeout(r,30));
+    try{
+      const text=await ocrImageWithClaude(img.file);
+      img.text=text;
+      img.status='done';
+    }catch(err){
+      img.status='error';img.text='';img.errorMsg=err.message;
+      console.error('OCR error:',img.name,err.message);
     }
-    update({ocrLoading:false});
+    const combined=S.menuImages.filter(i=>i.status==='done'&&i.text)
+      .map(i=>i.text).join('\n\n---\n\n');
+    update({menuImages:[...S.menuImages],menuText:combined,ocrProgress:100});
   }
+  update({ocrLoading:false});
+}
+
+function initGlobalEvents(){
 
   // ── Gallery input (multiple) ───────────────────────────────────────────────
   document.getElementById('galleryInputPersist').addEventListener('change',e=>{
