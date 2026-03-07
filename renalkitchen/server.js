@@ -102,7 +102,54 @@ app.get('/rk/status', (req, res) => {
   const opts = readOptions();
   res.json({
     configured: !!opts.anthropic_api_key,
+    haToken: !!process.env.SUPERVISOR_TOKEN,
   });
+});
+
+// ── API: HA Sensor push ───────────────────────────────────────────────────────
+// Writes entity states to HA via the Supervisor REST API.
+// Body: { sensors: [{ entity_id, state, attributes, unit, icon }] }
+
+app.post('/rk/sensor', async (req, res) => {
+  const token = process.env.SUPERVISOR_TOKEN;
+  if (!token) {
+    return res.status(503).json({ error: 'SUPERVISOR_TOKEN not available — addon not running inside HA?' });
+  }
+
+  const { sensors } = req.body;
+  if (!Array.isArray(sensors) || !sensors.length) {
+    return res.status(400).json({ error: 'No sensors provided' });
+  }
+
+  const results = [];
+  for (const s of sensors) {
+    const entityId = s.entity_id.startsWith('sensor.') ? s.entity_id : `sensor.${s.entity_id}`;
+    try {
+      const r = await fetch(`http://supervisor/core/api/states/${entityId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          state: String(s.state ?? ''),
+          attributes: {
+            friendly_name: s.friendly_name || entityId,
+            unit_of_measurement: s.unit || '',
+            icon: s.icon || 'mdi:food',
+            ...( s.attributes || {} ),
+          },
+        }),
+      });
+      const data = await r.json();
+      results.push({ entity_id: entityId, ok: r.ok, data });
+    } catch (e) {
+      results.push({ entity_id: entityId, ok: false, error: e.message });
+    }
+  }
+
+  const allOk = results.every(r => r.ok);
+  res.status(allOk ? 200 : 207).json({ results });
 });
 
 // ── Fallback ──────────────────────────────────────────────────────────────────
