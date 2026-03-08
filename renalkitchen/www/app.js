@@ -590,7 +590,7 @@ function buildApp(){
         <div style="font-size:.63rem;color:var(--stone);white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis">${esc(profileName)}</div>
       </button>
     </div>
-    <div style="max-width:880px;margin:0 auto;padding:0 1.2rem .9rem;display:flex;gap:.5rem;justify-content:center">
+    <div style="max-width:880px;margin:0 auto;padding:0 .6rem .9rem;display:flex;gap:.4rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none">
       <button class="tab${S.tab==='generate'?' active':''}" data-tab="generate">✨ Generieren</button>
       <button class="tab${S.tab==='menu'?' active':''}" data-tab="menu">📋 Menü</button>
       <button class="tab${S.tab==='tracker'?' active':''}" data-tab="tracker">📊 Tagebuch</button>
@@ -729,11 +729,11 @@ function buildMenu(){
           <div style="font-size:.72rem;color:var(--stone);margin-top:.4rem">${S.menuImages.filter(i=>i.status==='done').length}/${S.menuImages.length} fertig</div>
         </div>
       `:''}
-      <label for="galleryInputPersist" style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:${anyActive?'#f5f0ec':'var(--warm-white)'};border:1.5px dashed ${anyActive?'#c8b8a8':'var(--border)'};border-radius:10px;cursor:${anyActive?'not-allowed':'pointer'};font-size:.88rem;color:var(--stone-dark);font-weight:500;box-sizing:border-box;pointer-events:${anyActive?'none':'auto'}">
+      <button id="photoBtn" ${anyActive?'disabled':''} style="width:100%;display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:${anyActive?'#f5f0ec':'var(--warm-white)'};border:1.5px dashed ${anyActive?'#c8b8a8':'var(--border)'};border-radius:10px;cursor:${anyActive?'not-allowed':'pointer'};font-size:.88rem;color:var(--stone-dark);font-weight:500;box-sizing:border-box">
         <span style="font-size:1.3rem">🖼️</span>
         <div style="text-align:left"><div>${anyActive?'Warte auf Abschluss…':'Bilder auswählen (mehrere möglich)'}</div><div style="font-size:.72rem;color:var(--stone);font-weight:400;margin-top:1px">Claude liest Text direkt aus dem Foto</div></div>
-      </label>
-      ${S.ocrError?`<div style="background:#fff0ee;border:1px solid #e8937a;border-radius:8px;padding:.5rem .75rem;margin-top:.4rem;font-size:.78rem;color:#c4684a">⚠ ${esc(S.ocrError)}</div>`:''} 
+      </button>
+      ${S.ocrError?`<div style="background:#fff0ee;border:1px solid #e8937a;border-radius:8px;padding:.5rem .75rem;margin-top:.4rem;font-size:.78rem;color:#c4684a">⚠ ${esc(S.ocrError)}</div>`:''}
     </div>
 
     <div style="margin-bottom:1.1rem">
@@ -1297,18 +1297,7 @@ function bindEvents(){
   on('fridgeInput','input',e=>{S.fridgeInput=e.target.value;});
   on('fridgeInput','keydown',e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addFridgeItem();}});
 
-  // Pantry form inputs (use event delegation for dynamic elements)
-  document.getElementById('app').addEventListener('input',e=>{
-    if(e.target.id==='pantryFilter'){S.pantryFilter=e.target.value;render();}
-    if(e.target.id==='pfName')S.pantryForm={...S.pantryForm,name:e.target.value};
-    if(e.target.id==='pfQty')S.pantryForm={...S.pantryForm,quantity:e.target.value};
-    if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
-    if(e.target.id==='pfExp')S.pantryForm={...S.pantryForm,expirationDate:e.target.value};
-    if(e.target.id==='pfNote')S.pantryForm={...S.pantryForm,note:e.target.value};
-  });
-  document.getElementById('app').addEventListener('change',e=>{
-    if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
-  });
+  // Pantry form input/change delegation moved to initGlobalEvents (runs once)
 
   // (receiptPhotoBtn handling moved into main delegation below)
   on('fridgeAddBtn','click',addFridgeItem);
@@ -1347,57 +1336,42 @@ async function handleFavSave(i){
   update({editingFav:null});
 }
 // ── Claude Vision OCR — top-level so doScanReceipt and menu tab can both call it
-// Compress image to max 1600px wide/tall and JPEG quality 0.82 before OCR.
-// Reduces typical phone photo from 5MB to ~300KB, well within server limits.
-async function compressImageForOcr(file){
-  return new Promise((res,rej)=>{
-    const reader=new FileReader();
-    reader.onerror=()=>rej(new Error('Lesen fehlgeschlagen'));
-    reader.onload=ev=>{
-      const img=new Image();
-      img.onload=()=>{
-        const MAX=1600;
-        let w=img.width,h=img.height;
-        if(w>MAX||h>MAX){
-          if(w>h){h=Math.round(h*MAX/w);w=MAX;}
-          else{w=Math.round(w*MAX/h);h=MAX;}
-        }
-        const cv=document.createElement('canvas');
-        cv.width=w;cv.height=h;
-        cv.getContext('2d').drawImage(img,0,0,w,h);
-        const b64=cv.toDataURL('image/jpeg',0.82).split(',')[1];
-        res({b64,mime:'image/jpeg'});
-      };
-      img.onerror=()=>rej(new Error('Bildfehler'));
-      img.src=ev.target.result;
+// OCR via Claude Vision — reads file directly via FileReader (no canvas, no compression).
+// Server limit is 25MB; typical phone photo base64 is 4-10MB, well within range.
+async function ocrImageWithClaude(file, customPrompt){
+  return new Promise((resolve, reject)=>{
+    if(file.size > 18 * 1024 * 1024){
+      return reject(new Error('Bild zu groß (max 18MB). Bitte kleineres Foto wählen.'));
+    }
+    const reader = new FileReader();
+    reader.onerror = ()=> reject(new Error('Datei konnte nicht gelesen werden'));
+    reader.onload = async (ev)=>{
+      try{
+        const dataUrl = ev.target.result;
+        const b64 = dataUrl.split(',')[1];
+        const mime = file.type || 'image/jpeg';
+        if(!b64) return reject(new Error('Bild konnte nicht gelesen werden'));
+        const prompt = customPrompt ||
+          'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
+        const r = await fetch(BASE+'rk/claude',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            max_tokens: 1500,
+            messages:[{role:'user', content:[
+              {type:'image', source:{type:'base64', media_type: mime, data: b64}},
+              {type:'text', text: prompt}
+            ]}]
+          })
+        });
+        const data = await r.json();
+        if(!r.ok) throw new Error(data.error || 'Serverfehler '+r.status);
+        const text = data.content.map(b=>b.text||'').join('').trim();
+        resolve(text || '(kein Text erkannt)');
+      }catch(e){ reject(e); }
     };
     reader.readAsDataURL(file);
   });
-}
-
-async function ocrImageWithClaude(file, customPrompt){
-  try{
-    const {b64,mime}=await compressImageForOcr(file);
-    const prompt=customPrompt||'Extract ALL text visible in this image, preserving the structure. Output only the raw transcribed text. Do not summarise or translate.';
-    const r=await fetch(BASE+'rk/claude',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        max_tokens:1500,
-        messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-          {type:'text',text:prompt}
-        ]}]
-      })
-    });
-    const data=await r.json();
-    if(!r.ok)throw new Error(data.error||'Server: '+r.status);
-    const text=data.content.map(b=>b.text||'').join('').trim();
-    if(!text)throw new Error('Kein Text erkannt');
-    return text;
-  }catch(e){
-    throw e;
-  }
 }
 
 async function runOcrQueue(files){
@@ -1437,15 +1411,38 @@ async function runOcrQueue(files){
 
 function initGlobalEvents(){
 
-  // ── Gallery input (multiple) ───────────────────────────────────────────────
-  document.getElementById('galleryInputPersist').addEventListener('change',e=>{
-    const files=Array.from(e.target.files||[]);
-    // Clear AFTER copying — do it async so File objects are safely in our array first
-    if(files.length){
-      runOcrQueue(files);
-      setTimeout(()=>{try{e.target.value='';}catch{}},500);
-    }
+  // ── Pantry form inputs (one-time — must not re-register on each render) ────
+  document.getElementById('app').addEventListener('input',e=>{
+    if(e.target.id==='pantryFilter'){S.pantryFilter=e.target.value;render();return;}
+    if(e.target.id==='pfName')S.pantryForm={...S.pantryForm,name:e.target.value};
+    if(e.target.id==='pfQty')S.pantryForm={...S.pantryForm,quantity:e.target.value};
+    if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
+    if(e.target.id==='pfExp')S.pantryForm={...S.pantryForm,expirationDate:e.target.value};
+    if(e.target.id==='pfNote')S.pantryForm={...S.pantryForm,note:e.target.value};
   });
+  document.getElementById('app').addEventListener('change',e=>{
+    if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
+  });
+
+  // ── Gallery input — dynamic (avoids HA WebView change-event suppression) ────
+  // pickMenuPhotos creates a fresh input each time, same pattern as pickFoodPhoto
+  // which is known to work in HA's Android WebView.
+
+  // ── Menu photo picker — dynamic input, multiple files, known to work in HA WebView
+  function pickMenuPhotos(){
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.multiple = true;
+    inp.style.cssText = 'position:fixed;opacity:0;pointer-events:none;top:-9999px';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', e=>{
+      const files = Array.from(e.target.files || []);
+      document.body.removeChild(inp);
+      if(files.length) runOcrQueue(files);
+    });
+    inp.click();
+  }
 
   // ── Food photo picker — created dynamically to avoid WebView interference ────
   function pickFoodPhoto(){
@@ -1471,7 +1468,7 @@ function initGlobalEvents(){
 
   // ── Delegation (registered once) ───────────────────────────────────────────
   document.getElementById('app').addEventListener('click',e=>{
-    // photoBtn replaced by <label> — no longer needs JS click handling
+    if(e.target.closest('#photoBtn')){ pickMenuPhotos(); return; }
     if(e.target.closest('#receiptPhotoBtn')){
       const inp=document.createElement('input');
       inp.type='file';inp.accept='image/*';
