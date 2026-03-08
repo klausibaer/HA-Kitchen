@@ -37,7 +37,7 @@ function writeData(key, value) {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // ── Serve the frontend (inject ingress path for HA Ingress BASE detection) ────
 // HA Ingress sends X-Ingress-Path header. We inject it as a <meta> tag so
