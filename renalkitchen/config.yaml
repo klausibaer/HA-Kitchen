@@ -12,7 +12,7 @@ arch:
 ingress: true
 ingress_port: 3000
 panel_icon: mdi:food-drumstick
-panel_title: RenalKitchen
+panel_title: Healthkitchen
 options:
   anthropic_api_key: ""
 schema:
