@@ -46,10 +46,22 @@ const S={
 
 // ── Base URL (works under HA Ingress regardless of trailing slash) ─────────────
 const BASE=(()=>{
-  const meta=document.querySelector('meta[name="ingress-path"]');
-  const p=(meta&&meta.content)?meta.content:window.location.pathname;
-  return p.endsWith('/')?p:p+'/';
+  // Prefer the server-injected rk-api-base (most reliable, works in HA Android app).
+  // Fallback 1: ingress-path meta (add trailing slash ourselves).
+  // Fallback 2: window.location.pathname (desktop browsers, local dev).
+  const apiBased=document.querySelector('meta[name="rk-api-base"]');
+  if(apiBased&&apiBased.content&&apiBased.content.length>1)return apiBased.content;
+  const ingress=document.querySelector('meta[name="ingress-path"]');
+  if(ingress&&ingress.content){
+    const p=ingress.content;
+    return p.endsWith('/')?p:p+'/';
+  }
+  const loc=window.location.pathname;
+  // Strip any trailing filename (e.g. /index.html) — keep directory
+  const dir=loc.endsWith('/')?loc:loc.substring(0,loc.lastIndexOf('/')+1);
+  return dir||'/';
 })();
+console.log('[RK] BASE=',BASE);
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function apiGet(key){try{const r=await fetch(BASE+`rk/data/${key}`);const d=await r.json();return d.value;}catch{return null;}}
@@ -120,7 +132,7 @@ function rText(){
   const restr=`Potassium:${S.potassium},Phosphorus:${S.phosphorus},Sodium:${S.sodium},Calcium:${S.calcium},Fluid:${S.fluid},Protein:${S.protein},Oxalate:${S.oxalate},Purine:${S.purine}${flags?', '+flags:''}`;
   return`Goals: ${goalContext()}. Restrictions: ${restr}${S.calorieTarget?'. Calorie target: '+S.calorieTarget+'kcal/day':''}${genderStr?'. Patient: '+genderStr:''}`;
 }function nutShape(){return`"calories":"320","protein":"22g","potassium":"250mg","phosphorus":"180mg","sodium":"280mg","calcium":"80mg"`+(S.fluid!=='none'?`,"fluid":"180ml"`:'')+`,"carbs":"45g"`;}
-function extrasStr(){return[S.heartHealthy?'heart-healthy low saturated fat':'',S.diabetic?'diabetic-friendly low glycaemic':'',S.glutenFree?'gluten-free':'',S.lactose?'lactose-free':'',S.histamine?'low-histamine':'',S.ibs?'low-FODMAP':'',S.gout?'low-purine (gout)':'',S.hypertension?'DASH diet (hypertension)':'',S.liver?'liver-friendly no alcohol':'',S.extras].filter(Boolean).join(', ')||'none';}
+function extrasStr(){const flags=[S.heartHealthy?'heart-healthy low saturated fat':'',S.diabetic?'diabetic-friendly low glycaemic':'',S.glutenFree?'gluten-free':'',S.lactose?'lactose-free':'',S.histamine?'low-histamine':'',S.ibs?'low-FODMAP':'',S.gout?'low-purine (gout)':'',S.hypertension?'DASH diet (hypertension)':'',S.liver?'liver-friendly no alcohol':''].filter(Boolean);const custom=S.extras.trim();if(!flags.length&&!custom)return'none';let r=flags.join(', ');if(custom)r+=(r?'\nUser instructions: ':'')+custom;return r;}
 function unitStr(){return S.units==='metric'?'metric (g,ml,kg)':'imperial (oz,lbs,cups,fl oz)';}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function isFav(r){return S.favs.some(f=>f.name===r.name);}
@@ -813,7 +825,16 @@ function buildGenerate(){
         ].map(([v,icon,name,sub])=>{const on=(S.cookStyles||[]).includes(v);return`<button class="pill${on?' active':''}" data-cookstyle="${v}" style="display:flex;flex-direction:column;align-items:flex-start;gap:.05rem;padding:.45rem .8rem;border-radius:10px;text-align:left;min-width:0"><span style="display:flex;align-items:center;gap:.3rem;font-size:.79rem;font-weight:600;white-space:nowrap">${icon} ${name}</span><span style="font-size:.65rem;opacity:.8;font-weight:400;white-space:nowrap">${sub}</span></button>`;}).join('')}
       </div>
     </div>
-    <div><div class="lbl">Zusätzliche Hinweise</div><input id="extras" class="field" value="${esc(S.extras)}" placeholder="z.B. keine Meeresfrüchte, weiche Konsistenz…"/></div>
+    <div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.35rem">
+        <div class="lbl" style="margin:0">💬 Freie Anweisungen an Claude</div>
+        <div style="font-size:.68rem;color:var(--stone)">${S.extras.length>0?S.extras.length+' Zeichen':'optional'}</div>
+      </div>
+      <textarea id="extras" class="field" rows="3" style="resize:none;line-height:1.5;font-size:.84rem" placeholder="z.B.:&#10;– Mach es etwas würziger&#10;– Keine Meeresfrüchte, ich mag kein Fisch&#10;– Zutaten die ich sicher zu Hause habe&#10;– Mediterran inspiriert&#10;– Möglichst einfache Zubereitung">${esc(S.extras)}</textarea>
+      ${S.extras.trim()?'':`<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem">
+        ${['Würziger bitte','Einfache Zutaten','Mediterran','Für Kinder geeignet','Meal-Prep tauglich'].map(hint=>`<button data-quickhint="${hint}" style="font-size:.7rem;padding:.2rem .55rem;border:1px solid var(--border);border-radius:999px;background:none;cursor:pointer;color:var(--stone);white-space:nowrap">${hint}</button>`).join('')}
+      </div>`}
+    </div>
   </div>
 
   ${S.error?`<div class="error-box">${esc(S.error)}</div>`:''}
@@ -977,6 +998,143 @@ function buildLogUserPicker(){
 
 // ── Pantry / Fridge Storage System ────────────────────────────────────────────
 
+
+// ── Smart pantry item guessing ─────────────────────────────────────────────────
+// Local lookup for common German food items → {category, location, days (MHD)}
+// days = typical shelf life from purchase date.
+const PANTRY_ITEM_DB = [
+  // Milchprodukte
+  {k:['milch','vollmilch','fettarme milch','laktosefreie milch'],cat:'dairy',loc:'fridge',days:7},
+  {k:['butter'],cat:'dairy',loc:'fridge',days:30},
+  {k:['margarine'],cat:'dairy',loc:'fridge',days:60},
+  {k:['käse','gouda','edamer','emmentaler','parmesan','mozzarella','brie','camembert','frischkäse','quark','hüttenkäse','ricotta'],cat:'dairy',loc:'fridge',days:14},
+  {k:['joghurt','naturjoghurt','griechischer joghurt'],cat:'dairy',loc:'fridge',days:14},
+  {k:['sahne','schlagsahne','crème fraîche','saure sahne'],cat:'dairy',loc:'fridge',days:7},
+  {k:['kefir'],cat:'dairy',loc:'fridge',days:14},
+  {k:['ei','eier'],cat:'protein',loc:'fridge',days:21},
+  // Fleisch & Fisch (nicht vegan, aber im System vorhanden)
+  {k:['hähnchen','huhn','truthahn','pute','schwein','rind','lachs','thunfisch','garnelen','fisch'],cat:'protein',loc:'fridge',days:3},
+  // Pflanzliche Proteine
+  {k:['tofu','tempeh','seitan'],cat:'protein',loc:'fridge',days:5},
+  {k:['hummus'],cat:'protein',loc:'fridge',days:7},
+  {k:['linsen rote','linsen grüne','linsen','kichererbsen gekocht','bohnen gekocht'],cat:'protein',loc:'fridge',days:4},
+  // Gemüse frisch
+  {k:['karotten','karotte','möhren','möhre'],cat:'veg',loc:'fridge',days:14},
+  {k:['spinat','blattspinat'],cat:'veg',loc:'fridge',days:4},
+  {k:['salat','kopfsalat','eisbergsalat','rucola','feldsalat','roman'],cat:'veg',loc:'fridge',days:4},
+  {k:['broccoli','brokkoli'],cat:'veg',loc:'fridge',days:5},
+  {k:['blumenkohl'],cat:'veg',loc:'fridge',days:5},
+  {k:['zucchini'],cat:'veg',loc:'fridge',days:7},
+  {k:['paprika'],cat:'veg',loc:'fridge',days:7},
+  {k:['gurke'],cat:'veg',loc:'fridge',days:7},
+  {k:['tomaten','tomate','cherrytomaten'],cat:'veg',loc:'fridge',days:7},
+  {k:['champignons','pilze'],cat:'veg',loc:'fridge',days:5},
+  {k:['lauch','porree'],cat:'veg',loc:'fridge',days:7},
+  {k:['sellerie','staudensellerie'],cat:'veg',loc:'fridge',days:10},
+  {k:['rote beete','rote bete'],cat:'veg',loc:'fridge',days:14},
+  {k:['kartoffeln','kartoffel'],cat:'veg',loc:'pantry',days:60},
+  {k:['zwiebeln','zwiebel','rote zwiebeln'],cat:'veg',loc:'pantry',days:60},
+  {k:['knoblauch'],cat:'veg',loc:'pantry',days:30},
+  {k:['ingwer'],cat:'veg',loc:'fridge',days:21},
+  {k:['kürbis','butternut'],cat:'veg',loc:'pantry',days:60},
+  {k:['süßkartoffel'],cat:'veg',loc:'pantry',days:21},
+  {k:['mais','zuckermais'],cat:'veg',loc:'fridge',days:3},
+  {k:['bohnen grüne','grüne bohnen'],cat:'veg',loc:'fridge',days:4},
+  {k:['erbsen'],cat:'veg',loc:'fridge',days:3},
+  {k:['spargel'],cat:'veg',loc:'fridge',days:3},
+  // Obst
+  {k:['äpfel','apfel'],cat:'fruit',loc:'fridge',days:21},
+  {k:['birnen','birne'],cat:'fruit',loc:'fridge',days:7},
+  {k:['bananen','banane'],cat:'fruit',loc:'pantry',days:5},
+  {k:['orangen','orange','clementinen'],cat:'fruit',loc:'fridge',days:14},
+  {k:['zitronen','zitrone','limetten','limette'],cat:'fruit',loc:'fridge',days:14},
+  {k:['erdbeeren','erdbeere'],cat:'fruit',loc:'fridge',days:3},
+  {k:['heidelbeeren','blaubeeren','himbeeren'],cat:'fruit',loc:'fridge',days:4},
+  {k:['weintrauben','trauben'],cat:'fruit',loc:'fridge',days:7},
+  {k:['mango'],cat:'fruit',loc:'fridge',days:5},
+  {k:['avocado'],cat:'fruit',loc:'pantry',days:4},
+  {k:['ananas'],cat:'fruit',loc:'fridge',days:5},
+  {k:['kiwi'],cat:'fruit',loc:'fridge',days:7},
+  // Getreide & Backwaren
+  {k:['brot','vollkornbrot','toast','toastbrot','brötchen','baguette'],cat:'grain',loc:'pantry',days:5},
+  {k:['nudeln','pasta','spaghetti','penne','linguine','farfalle','vollkornnudeln'],cat:'grain',loc:'pantry',days:730},
+  {k:['reis','basmatireis','vollkornreis','parboiled reis'],cat:'grain',loc:'pantry',days:730},
+  {k:['haferflocken','hafer','oatmeal'],cat:'grain',loc:'pantry',days:365},
+  {k:['mehl','weizenmehl','vollkornmehl','dinkelmehl'],cat:'grain',loc:'pantry',days:365},
+  {k:['müsli','granola'],cat:'grain',loc:'pantry',days:180},
+  {k:['brot backmischung','backmischung'],cat:'grain',loc:'pantry',days:180},
+  {k:['quinoa'],cat:'grain',loc:'pantry',days:730},
+  {k:['couscous'],cat:'grain',loc:'pantry',days:730},
+  {k:['bulgur'],cat:'grain',loc:'pantry',days:730},
+  {k:['polenta','maisgrieß'],cat:'grain',loc:'pantry',days:365},
+  {k:['paniermehl','semmelbrösel'],cat:'grain',loc:'pantry',days:180},
+  // Konserven & Hülsenfrüchte trocken
+  {k:['tomaten dose','dosentomaten','tomatenmark','tomatensauce aus dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['kichererbsen dose','kichererbsen aus dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['bohnen dose','bohnen aus dose','schwarze bohnen','kidney bohnen'],cat:'canned',loc:'pantry',days:730},
+  {k:['linsen dose','linsen aus dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['mais dose','mais aus dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['thunfisch dose','sardinen dose','fisch dose'],cat:'canned',loc:'pantry',days:1460},
+  {k:['kokosmilch','kokosmilch dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['erbsen dose'],cat:'canned',loc:'pantry',days:730},
+  {k:['suppe dose','fertigsuppe'],cat:'canned',loc:'pantry',days:730},
+  // Trockenhülsenfrüchte
+  {k:['linsen trocken','rote linsen','grüne linsen','beluga linsen'],cat:'protein',loc:'pantry',days:730},
+  {k:['kichererbsen trocken'],cat:'protein',loc:'pantry',days:730},
+  {k:['weiße bohnen trocken','rote bohnen trocken','schwarze bohnen trocken'],cat:'protein',loc:'pantry',days:730},
+  // Gewürze & Öle
+  {k:['salz','meersalz','himalayasalz'],cat:'spice',loc:'pantry',days:1825},
+  {k:['pfeffer','schwarzer pfeffer'],cat:'spice',loc:'pantry',days:730},
+  {k:['paprikapulver','cumin','kreuzkümmel','kurkuma','curry','koriander gemahlen','zimt','muskat','oregano','thymian','rosmarin','basilikum getrocknet','petersilie getrocknet'],cat:'spice',loc:'pantry',days:730},
+  {k:['olivenöl','rapsöl','sonnenblumenöl','kokosöl'],cat:'spice',loc:'pantry',days:365},
+  {k:['essig','balsamico','apfelessig'],cat:'spice',loc:'pantry',days:730},
+  {k:['sojasoße','soja sauce','tamari'],cat:'spice',loc:'pantry',days:365},
+  {k:['senf'],cat:'spice',loc:'fridge',days:180},
+  {k:['ketchup','mayonnaise'],cat:'spice',loc:'fridge',days:90},
+  {k:['tomatenmark','tomatensoße'],cat:'spice',loc:'pantry',days:365},
+  {k:['honig'],cat:'spice',loc:'pantry',days:1825},
+  {k:['zucker','rohrzucker'],cat:'spice',loc:'pantry',days:1825},
+  {k:['backpulver','natron'],cat:'spice',loc:'pantry',days:365},
+  {k:['hefe','trockenhefe'],cat:'spice',loc:'pantry',days:90},
+  // Getränke
+  {k:['wasser','mineralwasser','sprudelwasser'],cat:'drink',loc:'pantry',days:365},
+  {k:['saft','orangensaft','apfelsaft','tomatensaft'],cat:'drink',loc:'fridge',days:5},
+  {k:['milchalternative','hafermilch','mandelmilch','sojamilch','reismilch'],cat:'drink',loc:'fridge',days:7},
+  {k:['kaffee','kaffeebohnen'],cat:'drink',loc:'pantry',days:365},
+  {k:['tee','grüner tee'],cat:'drink',loc:'pantry',days:730},
+  // Tiefkühl
+  {k:['tiefkühlerbsen','tk erbsen','tiefkühl','tk '],cat:'veg',loc:'freezer',days:270},
+  {k:['tk spinat','tiefkühlspinat'],cat:'veg',loc:'freezer',days:270},
+];
+
+// Returns {category, location, expirationDate} guesses for a pantry item name.
+// Pure local lookup — instant, no API call.
+function guessPantryMeta(name){
+  if(!name||!name.trim())return null;
+  const n=name.toLowerCase().trim();
+  // Try exact match first, then substring
+  let best=null;
+  let bestLen=0;
+  for(const row of PANTRY_ITEM_DB){
+    for(const k of row.k){
+      if((n===k||n.includes(k)||k.includes(n))&&k.length>bestLen){
+        best=row;bestLen=k.length;
+      }
+    }
+  }
+  if(!best)return null;
+  // Compute expiration date from today + days
+  const exp=new Date();
+  exp.setDate(exp.getDate()+best.days);
+  const yyyy=exp.getFullYear();
+  const mm=String(exp.getMonth()+1).padStart(2,'0');
+  const dd=String(exp.getDate()).padStart(2,'0');
+  return{category:best.cat,location:best.loc,expirationDate:`${yyyy}-${mm}-${dd}`};
+}
+
+// Debounce helper
+function debounce(fn,ms){let t;return(...args)=>{clearTimeout(t);t=setTimeout(()=>fn(...args),ms);};}
+
 const PANTRY_CATS=[
   {id:'grain',label:'Getreide & Backwaren',icon:'🌾'},
   {id:'veg',label:'Gemüse',icon:'🥦'},
@@ -1029,16 +1187,30 @@ function buildPantryForm(isEdit){
         ${PANTRY_UNITS.map(u=>`<option value="${u}"${f.unit===u?' selected':''}>${u}</option>`).join('')}
       </select></div>
     </div>
-    <div style="margin-bottom:.7rem"><div class="lbl">Kategorie</div>
+    <div style="margin-bottom:.7rem">
+      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
+        <div class="lbl" style="margin:0">Kategorie</div>
+        ${f._lastGuess&&!f._catManual?`<span style="font-size:.68rem;background:#e8f4e8;color:#3a7040;border-radius:4px;padding:.1rem .4rem">✦ Auto</span>`:''}
+      </div>
       <div style="display:flex;flex-wrap:wrap;gap:.35rem">
         ${PANTRY_CATS.map(c=>`<button data-pfcat="${c.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.category===c.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.category===c.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.category===c.id?'var(--terracotta)':'var(--stone-dark)'}">${c.icon} ${c.label}</button>`).join('')}
       </div></div>
-    <div style="margin-bottom:.7rem"><div class="lbl">Lagerort</div>
+    <div style="margin-bottom:.7rem">
+      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
+        <div class="lbl" style="margin:0">Lagerort</div>
+        ${f._lastGuess&&!f._locManual?`<span style="font-size:.68rem;background:#e8f4e8;color:#3a7040;border-radius:4px;padding:.1rem .4rem">✦ Auto</span>`:''}
+      </div>
       <div style="display:flex;flex-wrap:wrap;gap:.35rem">
         ${PANTRY_LOCS.map(l=>`<button data-pfloc="${l.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.location===l.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.location===l.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.location===l.id?'var(--terracotta)':'var(--stone-dark)'}">${l.icon} ${l.label}</button>`).join('')}
       </div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.9rem">
-      <div><div class="lbl">MHD / Ablaufdatum</div><input id="pfExp" class="field" type="date" value="${esc(f.expirationDate)}"/></div>
+      <div>
+        <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
+          <div class="lbl" style="margin:0">MHD / Ablaufdatum</div>
+          ${f._lastGuess&&!f._expManual?`<span style="font-size:.68rem;background:#e8f4e8;color:#3a7040;border-radius:4px;padding:.1rem .4rem">✦ Auto</span>`:''}
+        </div>
+        <input id="pfExp" class="field" type="date" value="${esc(f.expirationDate)}"/>
+      </div>
       <div><div class="lbl">Notiz</div><input id="pfNote" class="field" value="${esc(f.note)}" placeholder="optional"/></div>
     </div>
     <div style="display:flex;gap:.5rem">
@@ -1291,7 +1463,7 @@ function bindEvents(){
 
   on('mealType','change',e=>update({mealType:e.target.value}));
   on('dietStyle','change',e=>update({dietStyle:e.target.value}));
-  on('extras','input',e=>{S.extras=e.target.value;});
+  on('extras','input',e=>{S.extras=e.target.value;render();});
   on('dishName','input',e=>{S.dishName=e.target.value;});
   on('dishName','keydown',e=>{if(e.key==='Enter')doGenerate();});
   on('fridgeInput','input',e=>{S.fridgeInput=e.target.value;});
@@ -1409,15 +1581,41 @@ async function runOcrQueue(files){
   update({ocrLoading:false});
 }
 
+// Debounced pantry auto-guesser — called from pfName input handler
+const debouncedPantryGuess = debounce((name)=>{
+  const guess = guessPantryMeta(name);
+  if(!guess) return;
+  const updates = {};
+  if(!S.pantryForm._catManual) updates.category = guess.category;
+  if(!S.pantryForm._locManual) updates.location = guess.location;
+  if(!S.pantryForm._expManual && guess.expirationDate) updates.expirationDate = guess.expirationDate;
+  if(Object.keys(updates).length){
+    S.pantryForm = {...S.pantryForm, ...updates, _lastGuess: name};
+    renderPantryForm();
+  }
+}, 350);
+
 function initGlobalEvents(){
 
   // ── Pantry form inputs (one-time — must not re-register on each render) ────
   document.getElementById('app').addEventListener('input',e=>{
     if(e.target.id==='pantryFilter'){S.pantryFilter=e.target.value;render();return;}
-    if(e.target.id==='pfName')S.pantryForm={...S.pantryForm,name:e.target.value};
+    if(e.target.id==='pfName'){
+      const newName=e.target.value;
+      const oldName=S.pantryForm.name||'';
+      S.pantryForm={...S.pantryForm,name:newName};
+      // Auto-guess only if form is "clean" (user hasn't manually picked cat/loc/date yet)
+      // "clean" = still at defaults or previously auto-guessed
+      const isDefaultCat=!S.pantryForm._catManual;
+      const isDefaultLoc=!S.pantryForm._locManual;
+      const isDefaultExp=!S.pantryForm._expManual;
+      if(newName.length>2&&(isDefaultCat||isDefaultLoc||isDefaultExp)){
+        debouncedPantryGuess(newName);
+      }
+    }
     if(e.target.id==='pfQty')S.pantryForm={...S.pantryForm,quantity:e.target.value};
     if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
-    if(e.target.id==='pfExp')S.pantryForm={...S.pantryForm,expirationDate:e.target.value};
+    if(e.target.id==='pfExp')S.pantryForm={...S.pantryForm,expirationDate:e.target.value,_expManual:true};
     if(e.target.id==='pfNote')S.pantryForm={...S.pantryForm,note:e.target.value};
   });
   document.getElementById('app').addEventListener('change',e=>{
@@ -1486,7 +1684,7 @@ function initGlobalEvents(){
     }
     if(e.target.closest('#foodPhotoBtn')){pickFoodPhoto();return;}
     if(e.target.closest('#clearOcrPreview')){update({ocrPreviewUrl:null,menuText:'',menuAnalysis:null});return;}
-    const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle],[data-logmeal],[data-removeimg],[data-clearallimgs],[data-clearmenutext],[data-deletelog],[data-clearlog],[data-pushsensor],[data-pushdailysensor],[data-openmanuallog],[data-closemanuallog],[data-logmode],[data-clearfoodphoto],[data-logforprofile],[data-closelogpicker],[data-openpantryform],[data-closepantryform],[data-savepantryitem],[data-editpantryitem],[data-deletepantryitem],[data-pantrygroup],[data-openreceiptscanner],[data-closereceiptscanner],[data-usetocook],[data-pfcat],[data-pfloc],[data-setgoal],[data-togglegoal]')||e.target;
+    const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle],[data-logmeal],[data-removeimg],[data-clearallimgs],[data-clearmenutext],[data-deletelog],[data-clearlog],[data-pushsensor],[data-pushdailysensor],[data-openmanuallog],[data-closemanuallog],[data-logmode],[data-clearfoodphoto],[data-logforprofile],[data-closelogpicker],[data-openpantryform],[data-closepantryform],[data-savepantryitem],[data-editpantryitem],[data-deletepantryitem],[data-pantrygroup],[data-openreceiptscanner],[data-closereceiptscanner],[data-usetocook],[data-pfcat],[data-pfloc],[data-setgoal],[data-togglegoal],[data-quickhint]')||e.target;
     if(t.dataset.tab)update({tab:t.dataset.tab});
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
     if(t.dataset.favsave!==undefined)handleFavSave(+t.dataset.favsave);
@@ -1504,6 +1702,12 @@ function initGlobalEvents(){
     if(t.dataset.pickswap){const key=t.dataset.pickswap;const sw=S.swapState[key];if(sw?.opts)update({swapState:{...S.swapState,[key]:{swappedTo:sw.opts[+t.dataset.optidx]}}});}
     if(t.dataset.logmeal){const parts=t.dataset.logmeal.split('_');const ctx=parts[0],idx=+parts[1];const r=ctx==='result'?S.recipes[idx]:S.favs[idx];if(r)doLogMeal(r,t.dataset.logmeal);}
     if(t.dataset.removeimg){const id=t.dataset.removeimg;const kept=S.menuImages.filter(i=>i.id!==id);const newText=kept.map(i=>i.text||'').filter(Boolean).join('\n\n---\n\n');update({menuImages:kept,menuText:newText});}
+    if(t.dataset.quickhint){
+      S.extras=(S.extras?S.extras+'\n':'')+t.dataset.quickhint;
+      render();
+      setTimeout(()=>{const ta=document.getElementById('extras');if(ta){ta.focus();ta.selectionStart=ta.selectionEnd=ta.value.length;}},30);
+      return;
+    }
     if(t.dataset.clearallimgs)update({menuImages:[],menuText:'',menuAnalysis:null});
     if(t.dataset.clearmenutext)update({menuText:'',menuAnalysis:null});
     if(t.dataset.deletelog){const id=+t.dataset.deletelog;const nl=S.nutritionLog.filter(e=>e.id!==id);update({nutritionLog:nl});apiSet('nutritionLog',nl);}
@@ -1524,12 +1728,12 @@ function initGlobalEvents(){
     // ── Pantry ───────────────────────────────────────────────────────────────
     if(t.dataset.openpantryform){
       update({pantryAddOpen:true,pantryEditId:null,
-        pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:''}});
+        pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:'',_catManual:false,_locManual:false,_expManual:false}});
     }
     if(t.dataset.closepantryform)update({pantryAddOpen:false,pantryEditId:null});
     if(t.dataset.pantrygroup)update({pantryGroup:t.dataset.pantrygroup});
-    if(t.dataset.pfcat){S.pantryForm={...S.pantryForm,category:t.dataset.pfcat};renderPantryForm();}
-    if(t.dataset.pfloc){S.pantryForm={...S.pantryForm,location:t.dataset.pfloc};renderPantryForm();}
+    if(t.dataset.pfcat){S.pantryForm={...S.pantryForm,category:t.dataset.pfcat,_catManual:true};renderPantryForm();}
+    if(t.dataset.pfloc){S.pantryForm={...S.pantryForm,location:t.dataset.pfloc,_locManual:true};renderPantryForm();}
     if(t.dataset.editpantryitem){
       const it=S.pantry.find(x=>x.id===t.dataset.editpantryitem);
       if(it)update({pantryEditId:it.id,pantryAddOpen:false,
@@ -1958,23 +2162,36 @@ ${S.menuText.trim()}`;
 // ── Init ──────────────────────────────────────────────────────────────────────
 initGlobalEvents();
 (async function init(){
-  const[status,profiles,favs,nutritionLog,haUsersRes]=await Promise.all([
-    fetch(BASE+'rk/status').then(r=>r.json()).catch(()=>({configured:false})),
-    apiGet('profiles'),
-    apiGet('favourites'),
-    apiGet('nutritionLog'),
-    fetch(BASE+'rk/ha-users').then(r=>r.json()).catch(()=>({users:[]})),
-  ]);
-  if(profiles&&profiles.length){
-    S.profiles=profiles;
-    loadProfileData(profiles[0]);
+  // Timeout wrapper: if any fetch hangs > 8s, bail out gracefully
+  function withTimeout(p, ms=8000, fallback){
+    return Promise.race([p, new Promise(r=>setTimeout(()=>r(fallback),ms))]);
   }
-  if(favs)S.favs=favs;
-  if(nutritionLog)S.nutritionLog=nutritionLog;
-  if(haUsersRes?.users?.length)S.haUsers=haUsersRes.users;
-  S.favLoaded=true;
-  render();
-  // Load pantry async (slightly deferred so main UI is visible first)
-  loadPantry();
-  update({ready:true,configured:status.configured,haToken:!!status.haToken});
+  try{
+    const[status,profiles,favs,nutritionLog,haUsersRes]=await Promise.all([
+      withTimeout(fetch(BASE+'rk/status').then(r=>r.json()),6000,{configured:false}),
+      withTimeout(apiGet('profiles'),6000,null),
+      withTimeout(apiGet('favourites'),6000,null),
+      withTimeout(apiGet('nutritionLog'),6000,null),
+      withTimeout(fetch(BASE+'rk/ha-users').then(r=>r.json()),6000,{users:[]}),
+    ]);
+    if(profiles&&profiles.length){
+      S.profiles=profiles;
+      loadProfileData(profiles[0]);
+    }
+    if(favs)S.favs=favs;
+    if(nutritionLog)S.nutritionLog=nutritionLog;
+    if(haUsersRes?.users?.length)S.haUsers=haUsersRes.users;
+    S.favLoaded=true;
+    loadPantry();
+    update({ready:true,configured:status.configured,haToken:!!status.haToken});
+  }catch(e){
+    console.error('[RK] init failed:',e);
+    // Show error instead of infinite loading spinner
+    document.getElementById('app').innerHTML=`<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;color:#c4684a;text-align:center">
+      <div style="font-size:2rem;margin-bottom:1rem">⚠</div>
+      <div style="font-family:Georgia,serif;font-size:1.1rem;margin-bottom:.5rem">Verbindung fehlgeschlagen</div>
+      <div style="font-size:.82rem;color:#8a7060;max-width:320px;line-height:1.5">Konnte den RenalKitchen-Server nicht erreichen.<br>BASE: ${BASE}<br><br>Fehler: ${e.message}</div>
+      <button onclick="location.reload()" style="margin-top:1.5rem;padding:.6rem 1.4rem;background:#c4684a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:.9rem">Neu laden</button>
+    </div>`;
+  }
 })();
