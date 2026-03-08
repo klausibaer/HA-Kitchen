@@ -42,6 +42,7 @@ const S={
   sensorPushing:{},  // recipeKey → 'pushing'|'ok'|'error'
   swapState:{},servingOverrides:{},
   editingFav:null,
+  refineText:'',refineLoading:false,refineError:'',
 };
 
 // ── Base URL (works under HA Ingress regardless of trailing slash) ─────────────
@@ -841,6 +842,15 @@ function buildGenerate(){
   ${S.loading?`<div style="text-align:center;padding:2.5rem 1rem"><div class="spinner"></div><p style="font-family:Georgia,serif;font-style:italic;color:#8a7060">Crafting your personalised recipes…</p></div>`:''}
   <button class="btn-main" id="generateBtn" ${S.loading?'disabled':''}>${genLabel}</button>
   ${S.recipes.length?buildRecipes():''}
+  ${S.recipes.length&&!S.loading?`
+  <div style="margin-top:1.2rem;background:linear-gradient(135deg,#f5f0e8,var(--warm-white));border:1.5px solid var(--border);border-radius:16px;padding:1.1rem 1rem">
+    <div style="font-family:Georgia,serif;font-size:1rem;color:var(--stone-dark);margin-bottom:.3rem">✏️ Rezepte anpassen</div>
+    <div style="font-size:.78rem;color:var(--stone);margin-bottom:.7rem;line-height:1.4">Sag Claude was dir nicht passt — er überarbeitet alle Rezepte entsprechend.</div>
+    <textarea id="refineTextarea" rows="3" class="field" style="resize:none;font-size:.84rem;line-height:1.5;margin-bottom:.6rem" placeholder="z.B.:&#10;– Mach die Rezepte schärfer&#10;– Weniger Zutaten, einfachere Zubereitung&#10;– Ersetze Fisch durch Tofu&#10;– Mehr Gemüse, weniger Kohlenhydrate">${esc(S.refineText)}</textarea>
+    ${S.refineError?`<div style="font-size:.78rem;color:#c4684a;margin-bottom:.5rem">⚠ ${esc(S.refineError)}</div>`:''}
+    <button id="refineBtn" class="btn-main" style="width:100%" ${S.refineLoading||!S.refineText.trim()?'disabled':''}>${S.refineLoading?'Überarbeite Rezepte…':'Rezepte überarbeiten →'}</button>
+  </div>
+  `:''}
   </div>`;
 }
 
@@ -1464,6 +1474,8 @@ function bindEvents(){
   on('mealType','change',e=>update({mealType:e.target.value}));
   on('dietStyle','change',e=>update({dietStyle:e.target.value}));
   on('extras','input',e=>{S.extras=e.target.value;render();});
+  on('refineTextarea','input',e=>{S.refineText=e.target.value;render();});
+  on('refineBtn','click',doRefineRecipes);
   on('dishName','input',e=>{S.dishName=e.target.value;});
   on('dishName','keydown',e=>{if(e.key==='Enter')doGenerate();});
   on('fridgeInput','input',e=>{S.fridgeInput=e.target.value;});
@@ -2038,11 +2050,21 @@ Extract all food/grocery items. Return ONLY valid JSON array, no other text:
     if(!Array.isArray(parsed))parsed=[];
 
     if(parsed.length){
-      const items=parsed.map(item=>({
-        name:item.name||'Unbekannt',quantity:String(item.quantity||'1'),
-        unit:item.unit||'Stück',category:item.category||'other',
-        location:'fridge',expirationDate:'',note:''
-      }));
+      const items=parsed.map(item=>{
+        const name=item.name||'Unbekannt';
+        // Use same smart-guess DB as the manual form — fills location + MHD + category
+        const guess=guessPantryMeta(name);
+        return{
+          name,
+          quantity:String(item.quantity||'1'),
+          unit:item.unit||'Stück',
+          // Claude's category from receipt takes priority; guess fills gaps
+          category:item.category&&item.category!=='other'?item.category:(guess?.category||'other'),
+          location:guess?.location||'pantry',
+          expirationDate:guess?.expirationDate||'',
+          note:guess?'':'MHD unbekannt'
+        };
+      });
       const resp=await fetch(BASE+'rk/pantry/bulk',{method:'POST',
         headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
       await resp.json();
@@ -2157,6 +2179,33 @@ ${S.menuText.trim()}`;
     const txt=data.content.map(b=>b.text||'').join('');
     update({menuLoading:false,menuAnalysis:extractJSON(txt)});
   }catch(e){update({menuLoading:false,menuError:e.message});}
+}
+
+async function doRefineRecipes(){
+  if(!S.refineText.trim()||!S.recipes.length)return;
+  update({refineLoading:true,refineError:''});
+  const recipesJSON=JSON.stringify(S.recipes.map(r=>({
+    name:r.name,emoji:r.emoji,servings:r.servings,prepTime:r.prepTime,cookTime:r.cookTime,
+    ingredients:r.ingredients,instructions:r.instructions,nutrition:r.nutrition,kidneyTip:r.kidneyTip
+  })));
+  const prompt=`You are a nutrition expert specialising in ${goalContext()}. The user has already generated these recipes and now wants adjustments.
+
+User's adjustment request: "${S.refineText.trim()}"
+
+Profile: ${rText()}
+
+Here are the current recipes:
+${recipesJSON}
+
+Refine ALL recipes according to the user's request while keeping them suitable for their profile. Keep the same JSON structure. Respond with ONLY a valid JSON array, no markdown fences.`;
+  try{
+    const t=await claudeRaw([{role:'user',content:prompt}],3000);
+    const refined=extractJSON(t);
+    if(!Array.isArray(refined)||!refined.length)throw new Error('Ungültige Antwort von Claude');
+    update({recipes:refined,refineLoading:false,refineText:''});
+  }catch(e){
+    update({refineLoading:false,refineError:e.message});
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
