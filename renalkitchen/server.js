@@ -44,10 +44,17 @@ app.use(express.json({ limit: '25mb' }));
 // app.js can compute BASE correctly regardless of proxy depth.
 app.get('/', (req, res) => {
   const ingressPath = req.headers['x-ingress-path'] || '';
+  // Derive API base: ingressPath is e.g. /api/hassio_ingress/TOKEN (no trailing slash)
+  // We expose it directly so the client never has to guess from window.location.
+  const apiBase = ingressPath ? (ingressPath.endsWith('/') ? ingressPath : ingressPath + '/') : '/';
+  console.log(`[RK] GET / — ingress-path: "${ingressPath}" → apiBase: "${apiBase}" — ua: ${(req.headers['user-agent']||'').slice(0,80)}`);
   try {
     let html = fs.readFileSync(path.join(__dirname, 'www', 'index.html'), 'utf8');
-    html = html.replace('<link rel="stylesheet"', `<meta name="ingress-path" content="${ingressPath}"/>\n<link rel="stylesheet"`);
+    const metas = `<meta name="ingress-path" content="${ingressPath}"/>\n` +
+                  `<meta name="rk-api-base" content="${apiBase}"/>\n`;
+    html = html.replace('<link rel="stylesheet"', metas + '<link rel="stylesheet"');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
     res.send(html);
   } catch (e) {
     res.status(500).send('Failed to load index.html: ' + e.message);
