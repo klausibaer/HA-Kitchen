@@ -11,6 +11,7 @@ arch:
   - i386
 ingress: true
 ingress_port: 3000
+panel_admin: false
 panel_icon: mdi:food-drumstick
 panel_title: Healthkitchen
 options:
