@@ -569,6 +569,11 @@ function openProfile(){
   document.getElementById('overlay').classList.add('open');
   document.getElementById('profilePanel').classList.add('open');
   renderProfile();
+  // Re-fetch HA users each time the panel opens — picks up newly created person entities
+  fetch(BASE+'rk/ha-users').then(r=>r.json()).then(d=>{
+    S.haUsers=d.users||[];
+    renderProfile();
+  }).catch(()=>{});
 }
 function closeProfile(){
   S.profileOpen=false;
@@ -577,7 +582,23 @@ function closeProfile(){
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function render(){document.getElementById('app').innerHTML=buildApp();bindEvents();}
+function render(){
+  // Save focus + cursor before clobbering DOM
+  const fa=document.activeElement;
+  const savedId=fa?.id||null;
+  const savedStart=fa?.selectionStart??null;
+  const savedEnd=fa?.selectionEnd??null;
+  document.getElementById('app').innerHTML=buildApp();
+  bindEvents();
+  // Restore focus + cursor after render so textareas/inputs don't lose position
+  if(savedId){
+    const el=document.getElementById(savedId);
+    if(el){
+      el.focus();
+      if(savedStart!==null&&el.setSelectionRange){try{el.setSelectionRange(savedStart,savedEnd);}catch{}}
+    }
+  }
+}
 function update(changes){Object.assign(S,changes);render();}
 
 function buildApp(){
