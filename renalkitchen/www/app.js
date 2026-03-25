@@ -29,7 +29,10 @@ const S={
   // pantry
   pantry:[],pantryLoaded:false,pantryGroup:'category',pantryFilter:'',
   pantryAddOpen:false,pantryEditId:null,pantryReceiptOpen:false,pantryReceiptScanning:false,pantryReceiptStatus:'',
-  pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:''},
+  pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:'',_catManual:false,_locManual:false,_expManual:false,_rememberItem:false,_rememberAs:'',_addingCat:false,_addingLoc:false,_newCatIcon:'',_newCatName:'',_newLocIcon:'',_newLocName:''},
+  customCats:[],   // [{id,label,icon}] user-defined categories
+  customLocs:[],   // [{id,label,icon}] user-defined locations
+  customPantryDB:[],  // [{k:[keywords],cat,loc,days}] user-defined MHD rules
   menuText:'',ocrLoading:false,ocrProgress:0,ocrError:'',
   menuAnalysis:null,menuLoading:false,menuError:'',
   // nutrition tracker
@@ -603,7 +606,7 @@ function update(changes){Object.assign(S,changes);render();}
 
 function buildApp(){
   if(!S.ready)return`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#8a7060">Loading&#8230;</div>`;
-  const noKey=!S.configured?`<div class="no-key-banner">⚠ <strong>Anthropic API key not set.</strong> Go to <strong>Settings → Add-ons → RenalKitchen → Configuration</strong> and enter your key, then restart the addon.</div>`:'';
+  const noKey=!S.configured?`<div class="no-key-banner">⚠ <strong>Anthropic API key not set.</strong> Go to <strong>Settings → Add-ons → HealthKitchen → Configuration</strong> and enter your key, then restart the addon.</div>`:'';
   const profileInitials=S.name?S.name[0].toUpperCase():'👤';
   const profileName=S.name||(S.profiles.length>1?`${S.profiles.length} profiles`:'Profil einrichten');
   const favCount=S.favs.length>0?`<span style="background:#c4684a;color:white;border-radius:999px;font-size:.65rem;padding:.1rem .4rem;font-weight:600;margin-left:.3rem">${S.favs.length}</span>`:'';
@@ -615,7 +618,7 @@ function buildApp(){
       <div>
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem">
           <div style="width:26px;height:26px;background:linear-gradient(135deg,var(--terracotta),var(--terra-light));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem;box-shadow:0 2px 6px rgba(196,104,74,.3)">🍽</div>
-          <span style="font-family:Georgia,serif;font-size:.88rem;color:var(--stone);letter-spacing:.3px">RenalKitchen</span>
+          <span style="font-family:Georgia,serif;font-size:.88rem;color:var(--stone);letter-spacing:.3px">HealthKitchen</span>
         </div>
         <div style="font-family:Georgia,serif;font-size:clamp(1.2rem,4vw,1.7rem);color:var(--stone-dark);line-height:1.15">${tagline}</div>
       </div>
@@ -876,7 +879,7 @@ function buildGenerate(){
 }
 
 function buildRecipes(){
-  return`<div style="margin-top:1.5rem"><div style="margin-bottom:1.1rem;padding-bottom:.7rem;border-bottom:1px solid #e8d8c8"><div style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;color:#4a7a55;font-weight:500;margin-bottom:.2rem">${S.recipes.length} recipe${S.recipes.length>1?'s':''} generated</div><div style="font-family:Georgia,serif;font-size:1.45rem;color:#5c3d2e">Your kidney-friendly recipes</div></div>
+  return`<div style="margin-top:1.5rem"><div style="margin-bottom:1.1rem;padding-bottom:.7rem;border-bottom:1px solid #e8d8c8"><div style="font-size:.74rem;text-transform:uppercase;letter-spacing:1px;color:#4a7a55;font-weight:500;margin-bottom:.2rem">${S.recipes.length} recipe${S.recipes.length>1?'s':''} generated</div><div style="font-family:Georgia,serif;font-size:1.45rem;color:#5c3d2e">Your recipes</div></div>
   ${S.recipes.map((r,i)=>`
     ${r.fridgeIngredientsUsed?.length?`<div class="fridge-banner">From your fridge: ${esc(r.fridgeIngredientsUsed.join(', '))}</div>`:''}
     ${r.adaptations?.length?`<div class="adapt-banner"><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;font-weight:600;color:#4a7a9b;margin-bottom:.55rem">Adaptations from the original</div>${r.adaptations.map(a=>`<div style="background:white;border:1px solid #c5dcec;border-radius:8px;padding:.45rem .7rem;margin-bottom:.4rem"><div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.15rem"><span style="color:#8a7060;text-decoration:line-through;font-size:.78rem">${esc(a.original)}</span><span style="color:#8a7060">→</span><span style="color:#4a7a55;font-weight:600;font-size:.78rem">${esc(a.replacement)}</span></div><div style="color:#8a7060;font-style:italic;font-size:.73rem;line-height:1.4">${esc(a.reason)}</div></div>`).join('')}</div>`:''}
@@ -1143,20 +1146,40 @@ const PANTRY_ITEM_DB = [
 function guessPantryMeta(name){
   if(!name||!name.trim())return null;
   const n=name.toLowerCase().trim();
-  // Try exact match first, then substring
-  let best=null;
-  let bestLen=0;
-  for(const row of PANTRY_ITEM_DB){
+
+  // 1. User-defined rules (highest priority)
+  for(const row of (S.customPantryDB||[])){
     for(const k of row.k){
-      if((n===k||n.includes(k)||k.includes(n))&&k.length>bestLen){
-        best=row;bestLen=k.length;
+      if(n===k||n.includes(k)||k.includes(n)){
+        const exp=new Date();exp.setDate(exp.getDate()+row.days);
+        return{category:row.cat,location:row.loc,expirationDate:exp.toISOString().slice(0,10)};
       }
     }
   }
+
+  // 2. Learn from existing pantry items with same name
+  const existing=(S.pantry||[]).find(item=>{
+    const i=item.name.toLowerCase();
+    return i===n||i.includes(n)||n.includes(i);
+  });
+  if(existing&&existing.category&&existing.location){
+    let expirationDate='';
+    if(existing.expirationDate&&existing.addedAt){
+      const origDays=Math.round((new Date(existing.expirationDate)-new Date(existing.addedAt))/(1000*60*60*24));
+      if(origDays>0){const e=new Date();e.setDate(e.getDate()+origDays);expirationDate=e.toISOString().slice(0,10);}
+    }
+    return{category:existing.category,location:existing.location,expirationDate};
+  }
+
+  // 3. Built-in DB
+  let best=null,bestLen=0;
+  for(const row of PANTRY_ITEM_DB){
+    for(const k of row.k){
+      if((n===k||n.includes(k)||k.includes(n))&&k.length>bestLen){best=row;bestLen=k.length;}
+    }
+  }
   if(!best)return null;
-  // Compute expiration date from today + days
-  const exp=new Date();
-  exp.setDate(exp.getDate()+best.days);
+  const exp=new Date();exp.setDate(exp.getDate()+best.days);
   const yyyy=exp.getFullYear();
   const mm=String(exp.getMonth()+1).padStart(2,'0');
   const dd=String(exp.getDate()).padStart(2,'0');
@@ -1186,6 +1209,11 @@ const PANTRY_LOCS=[
 ];
 const PANTRY_UNITS=['g','kg','ml','L','Stück','Pkg.','Dose','Bund','EL','TL'];
 
+// Dynamic getters — merge built-in + user-defined
+function getAllCats(){return[...PANTRY_CATS,...(S.customCats||[])];}
+function getAllLocs(){return[...PANTRY_LOCS,...(S.customLocs||[])];}
+
+
 function pantryDaysLeft(expDate){
   if(!expDate)return null;
   const diff=Math.round((new Date(expDate)-new Date())/(1000*60*60*24));
@@ -1208,6 +1236,8 @@ function pantryExpiryLabel(days){
 
 function buildPantryForm(isEdit){
   const f=S.pantryForm;
+  const allCats=getAllCats();
+  const allLocs=getAllLocs();
   return`<div class="modal-sheet" style="padding:1.2rem 1rem 1.5rem;max-height:92vh;overflow-y:auto">
     <div style="font-weight:700;font-size:1rem;color:var(--stone-dark);margin-bottom:1rem">${isEdit?'Artikel bearbeiten':'Artikel hinzufügen'}</div>
     <div style="margin-bottom:.7rem"><div class="lbl">Name *</div>
@@ -1218,23 +1248,44 @@ function buildPantryForm(isEdit){
         ${PANTRY_UNITS.map(u=>`<option value="${u}"${f.unit===u?' selected':''}>${u}</option>`).join('')}
       </select></div>
     </div>
+
     <div style="margin-bottom:.7rem">
       <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
         <div class="lbl" style="margin:0">Kategorie</div>
         ${f._lastGuess&&!f._catManual?`<span style="font-size:.68rem;background:#e8f4e8;color:#3a7040;border-radius:4px;padding:.1rem .4rem">✦ Auto</span>`:''}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.35rem">
-        ${PANTRY_CATS.map(c=>`<button data-pfcat="${c.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.category===c.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.category===c.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.category===c.id?'var(--terracotta)':'var(--stone-dark)'}">${c.icon} ${c.label}</button>`).join('')}
-      </div></div>
+        ${allCats.map(c=>`<button data-pfcat="${c.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.category===c.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.category===c.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.category===c.id?'var(--terracotta)':'var(--stone-dark)'}">${c.icon} ${c.label}</button>`).join('')}
+        ${f._addingCat?`
+          <div style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;margin-top:.2rem">
+            <input id="pfNewCatIcon" class="field" value="${esc(f._newCatIcon||'')}" placeholder="🏷️" style="width:46px;text-align:center;padding:.3rem"/>
+            <input id="pfNewCatName" class="field" value="${esc(f._newCatName||'')}" placeholder="Kategoriename" style="flex:1;min-width:100px"/>
+            <button data-pfconfirmcat="1" style="padding:.3rem .6rem;background:var(--terracotta);color:white;border:none;border-radius:7px;cursor:pointer;font-size:.8rem">✓</button>
+            <button data-pfcancelcat="1" style="padding:.3rem .6rem;border:1px solid var(--border);background:none;border-radius:7px;cursor:pointer;font-size:.8rem">✕</button>
+          </div>`
+        :`<button data-pfstartaddcat="1" style="padding:.3rem .6rem;border:1.5px dashed var(--border);border-radius:8px;background:none;font-size:.75rem;cursor:pointer;color:var(--stone)">+ Neu</button>`}
+      </div>
+    </div>
+
     <div style="margin-bottom:.7rem">
       <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
         <div class="lbl" style="margin:0">Lagerort</div>
         ${f._lastGuess&&!f._locManual?`<span style="font-size:.68rem;background:#e8f4e8;color:#3a7040;border-radius:4px;padding:.1rem .4rem">✦ Auto</span>`:''}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:.35rem">
-        ${PANTRY_LOCS.map(l=>`<button data-pfloc="${l.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.location===l.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.location===l.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.location===l.id?'var(--terracotta)':'var(--stone-dark)'}">${l.icon} ${l.label}</button>`).join('')}
-      </div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.9rem">
+        ${allLocs.map(l=>`<button data-pfloc="${l.id}" style="padding:.3rem .6rem;border:1.5px solid ${f.location===l.id?'var(--terracotta)':'var(--border)'};border-radius:8px;background:${f.location===l.id?'var(--terra-faint)':'white'};font-size:.75rem;cursor:pointer;color:${f.location===l.id?'var(--terracotta)':'var(--stone-dark)'}">${l.icon} ${l.label}</button>`).join('')}
+        ${f._addingLoc?`
+          <div style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;margin-top:.2rem">
+            <input id="pfNewLocIcon" class="field" value="${esc(f._newLocIcon||'')}" placeholder="📍" style="width:46px;text-align:center;padding:.3rem"/>
+            <input id="pfNewLocName" class="field" value="${esc(f._newLocName||'')}" placeholder="Lagerortname" style="flex:1;min-width:100px"/>
+            <button data-pfconfirmloc="1" style="padding:.3rem .6rem;background:var(--terracotta);color:white;border:none;border-radius:7px;cursor:pointer;font-size:.8rem">✓</button>
+            <button data-pfcancelloc="1" style="padding:.3rem .6rem;border:1px solid var(--border);background:none;border-radius:7px;cursor:pointer;font-size:.8rem">✕</button>
+          </div>`
+        :`<button data-pfstartaddloc="1" style="padding:.3rem .6rem;border:1.5px dashed var(--border);border-radius:8px;background:none;font-size:.75rem;cursor:pointer;color:var(--stone)">+ Neu</button>`}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.7rem">
       <div>
         <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
           <div class="lbl" style="margin:0">MHD / Ablaufdatum</div>
@@ -1244,6 +1295,22 @@ function buildPantryForm(isEdit){
       </div>
       <div><div class="lbl">Notiz</div><input id="pfNote" class="field" value="${esc(f.note)}" placeholder="optional"/></div>
     </div>
+
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${f._rememberItem?'.3rem':'.9rem'};padding:.55rem .75rem;background:var(--warm-white);border:1px solid var(--border);border-radius:8px;cursor:pointer" data-pftoggleremember="1">
+      <div style="width:18px;height:18px;border-radius:4px;border:1.5px solid ${f._rememberItem?'var(--terracotta)':'#c0b0a0'};background:${f._rememberItem?'var(--terracotta)':'white'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.75rem;color:white">${f._rememberItem?'✓':''}</div>
+      <div>
+        <div style="font-size:.8rem;color:var(--stone-dark);font-weight:500">Einstellungen merken</div>
+        <div style="font-size:.7rem;color:var(--stone)">Kategorie, Lagerort &amp; MHD für diesen Artikel als Standard speichern</div>
+      </div>
+    </div>
+    ${f._rememberItem?`
+    <div style="margin-bottom:.9rem;padding:.55rem .75rem;background:#f5f0fc;border:1px solid #d8c8ec;border-radius:8px">
+      <div class="lbl" style="margin-bottom:.3rem">Merken als <span style="text-transform:none;letter-spacing:0;font-weight:400;font-size:.7rem;color:var(--stone)">— Suchbegriff für zukünftige Auto-Erkennung</span></div>
+      <input id="pfRememberAs" class="field" value="${esc(f._rememberAs||f.name)}" placeholder="z.B. Zitrone"/>
+      <div style="font-size:.7rem;color:#7a5aaa;margin-top:.3rem">Tipp: Verwende den generischen Namen ohne Marke/Bio-Zusätze</div>
+    </div>`:''}
+
+
     <div style="display:flex;gap:.5rem">
       <button data-closepantryform="1" style="flex:1;padding:.6rem;border:1px solid var(--border);background:none;border-radius:8px;font-size:.85rem;color:var(--stone);cursor:pointer">Abbrechen</button>
       <button data-savepantryitem="${isEdit?S.pantryEditId:''}" style="flex:2;padding:.6rem;background:var(--terracotta);color:white;border:none;border-radius:8px;font-size:.88rem;font-weight:600;cursor:pointer">${isEdit?'Speichern':'Hinzufügen'}</button>
@@ -1279,7 +1346,7 @@ function buildPantry(){
   const filtered=filter?items.filter(i=>i.name.toLowerCase().includes(filter)):items;
 
   // Build group structure
-  const groups=groupBy==='category'?PANTRY_CATS:PANTRY_LOCS;
+  const groups=groupBy==='category'?getAllCats():getAllLocs();
   const keyField=groupBy==='category'?'category':'location';
   const grouped=groups.map(g=>({
     ...g,
@@ -1338,7 +1405,7 @@ function buildPantry(){
       }).map(item=>{
         const days=pantryDaysLeft(item.expirationDate);
         const color=pantryExpiryColor(days);
-        const catObj=(groupBy==='location'?PANTRY_CATS:PANTRY_LOCS).find(x=>x.id===(groupBy==='location'?item.category:item.location));
+        const catObj=(groupBy==='location'?getAllCats():getAllLocs()).find(x=>x.id===(groupBy==='location'?item.category:item.location));
         return`<div style="display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:1px solid #f5ede8">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:.4rem">
@@ -1494,8 +1561,8 @@ function bindEvents(){
 
   on('mealType','change',e=>update({mealType:e.target.value}));
   on('dietStyle','change',e=>update({dietStyle:e.target.value}));
-  on('extras','input',e=>{S.extras=e.target.value;render();});
-  on('refineTextarea','input',e=>{S.refineText=e.target.value;render();});
+  on('extras','input',e=>{S.extras=e.target.value;});
+  on('refineTextarea','input',e=>{S.refineText=e.target.value;});
   on('refineBtn','click',doRefineRecipes);
   on('dishName','input',e=>{S.dishName=e.target.value;});
   on('dishName','keydown',e=>{if(e.key==='Enter')doGenerate();});
@@ -1510,7 +1577,7 @@ function bindEvents(){
   on('generateBtn','click',doGenerate);
 
   // Menu
-  on('menuText','input',e=>update({menuText:e.target.value,menuAnalysis:null}));
+  on('menuText','input',e=>{S.menuText=e.target.value;S.menuAnalysis=null;});
   on('analyzeMenuBtn','click',doAnalyzeMenu);
 
   // Manual log modal (re-rendered inside #app so must bind each render)
@@ -1650,6 +1717,11 @@ function initGlobalEvents(){
     if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
     if(e.target.id==='pfExp')S.pantryForm={...S.pantryForm,expirationDate:e.target.value,_expManual:true};
     if(e.target.id==='pfNote')S.pantryForm={...S.pantryForm,note:e.target.value};
+    if(e.target.id==='pfNewCatIcon')S.pantryForm={...S.pantryForm,_newCatIcon:e.target.value};
+    if(e.target.id==='pfNewCatName')S.pantryForm={...S.pantryForm,_newCatName:e.target.value};
+    if(e.target.id==='pfNewLocIcon')S.pantryForm={...S.pantryForm,_newLocIcon:e.target.value};
+    if(e.target.id==='pfNewLocName')S.pantryForm={...S.pantryForm,_newLocName:e.target.value};
+    if(e.target.id==='pfRememberAs')S.pantryForm={...S.pantryForm,_rememberAs:e.target.value};
   });
   document.getElementById('app').addEventListener('change',e=>{
     if(e.target.id==='pfUnit')S.pantryForm={...S.pantryForm,unit:e.target.value};
@@ -1717,7 +1789,7 @@ function initGlobalEvents(){
     }
     if(e.target.closest('#foodPhotoBtn')){pickFoodPhoto();return;}
     if(e.target.closest('#clearOcrPreview')){update({ocrPreviewUrl:null,menuText:'',menuAnalysis:null});return;}
-    const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle],[data-logmeal],[data-removeimg],[data-clearallimgs],[data-clearmenutext],[data-deletelog],[data-clearlog],[data-pushsensor],[data-pushdailysensor],[data-openmanuallog],[data-closemanuallog],[data-logmode],[data-clearfoodphoto],[data-logforprofile],[data-closelogpicker],[data-openpantryform],[data-closepantryform],[data-savepantryitem],[data-editpantryitem],[data-deletepantryitem],[data-pantrygroup],[data-openreceiptscanner],[data-closereceiptscanner],[data-usetocook],[data-pfcat],[data-pfloc],[data-setgoal],[data-togglegoal],[data-quickhint]')||e.target;
+    const t=e.target.closest('[data-tab],[data-mode],[data-count],[data-stepper],[data-svstep],[data-favtoggle],[data-favedittoggle],[data-favsave],[data-removefridge],[data-swap],[data-undoswap],[data-cancelswap],[data-pickswap],[data-preptime],[data-cookstyle],[data-logmeal],[data-removeimg],[data-clearallimgs],[data-clearmenutext],[data-deletelog],[data-clearlog],[data-pushsensor],[data-pushdailysensor],[data-openmanuallog],[data-closemanuallog],[data-logmode],[data-clearfoodphoto],[data-logforprofile],[data-closelogpicker],[data-openpantryform],[data-closepantryform],[data-savepantryitem],[data-editpantryitem],[data-deletepantryitem],[data-pantrygroup],[data-openreceiptscanner],[data-closereceiptscanner],[data-usetocook],[data-pfcat],[data-pfloc],[data-setgoal],[data-togglegoal],[data-quickhint],[data-pfstartaddcat],[data-pfcancelcat],[data-pfconfirmcat],[data-pfstartaddloc],[data-pfcancelloc],[data-pfconfirmloc],[data-pftoggleremember]')||e.target;
     if(t.dataset.tab)update({tab:t.dataset.tab});
     if(t.dataset.favedittoggle!==undefined){const i=+t.dataset.favedittoggle;update({editingFav:S.editingFav===i?null:i});}
     if(t.dataset.favsave!==undefined)handleFavSave(+t.dataset.favsave);
@@ -1761,12 +1833,42 @@ function initGlobalEvents(){
     // ── Pantry ───────────────────────────────────────────────────────────────
     if(t.dataset.openpantryform){
       update({pantryAddOpen:true,pantryEditId:null,
-        pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:'',_catManual:false,_locManual:false,_expManual:false}});
+        pantryForm:{name:'',quantity:'1',unit:'g',category:'other',location:'fridge',expirationDate:'',note:'',_catManual:false,_locManual:false,_expManual:false,_rememberItem:false,_rememberAs:'',_addingCat:false,_addingLoc:false,_newCatIcon:'',_newCatName:'',_newLocIcon:'',_newLocName:''}});
     }
     if(t.dataset.closepantryform)update({pantryAddOpen:false,pantryEditId:null});
     if(t.dataset.pantrygroup)update({pantryGroup:t.dataset.pantrygroup});
-    if(t.dataset.pfcat){S.pantryForm={...S.pantryForm,category:t.dataset.pfcat,_catManual:true};renderPantryForm();}
-    if(t.dataset.pfloc){S.pantryForm={...S.pantryForm,location:t.dataset.pfloc,_locManual:true};renderPantryForm();}
+    if(t.dataset.pfcat){S.pantryForm={...S.pantryForm,category:t.dataset.pfcat,_catManual:true,_addingCat:false};renderPantryForm();}
+    if(t.dataset.pfloc){S.pantryForm={...S.pantryForm,location:t.dataset.pfloc,_locManual:true,_addingLoc:false};renderPantryForm();}
+    // Custom category creation
+    if(t.dataset.pfstartaddcat){S.pantryForm={...S.pantryForm,_addingCat:true,_newCatIcon:'',_newCatName:''};renderPantryForm();}
+    if(t.dataset.pfcancelcat){S.pantryForm={...S.pantryForm,_addingCat:false};renderPantryForm();}
+    if(t.dataset.pfconfirmcat){
+      const icon=document.getElementById('pfNewCatIcon')?.value.trim()||'📦';
+      const label=document.getElementById('pfNewCatName')?.value.trim();
+      if(label){
+        const id='cat_'+Date.now();
+        S.customCats=[...S.customCats,{id,label,icon}];
+        apiSet('customCats',S.customCats);
+        S.pantryForm={...S.pantryForm,category:id,_catManual:true,_addingCat:false,_newCatIcon:'',_newCatName:''};
+      }else{S.pantryForm={...S.pantryForm,_addingCat:false};}
+      renderPantryForm();
+    }
+    // Custom location creation
+    if(t.dataset.pfstartaddloc){S.pantryForm={...S.pantryForm,_addingLoc:true,_newLocIcon:'',_newLocName:''};renderPantryForm();}
+    if(t.dataset.pfcancelloc){S.pantryForm={...S.pantryForm,_addingLoc:false};renderPantryForm();}
+    if(t.dataset.pfconfirmloc){
+      const icon=document.getElementById('pfNewLocIcon')?.value.trim()||'📍';
+      const label=document.getElementById('pfNewLocName')?.value.trim();
+      if(label){
+        const id='loc_'+Date.now();
+        S.customLocs=[...S.customLocs,{id,label,icon}];
+        apiSet('customLocs',S.customLocs);
+        S.pantryForm={...S.pantryForm,location:id,_locManual:true,_addingLoc:false,_newLocIcon:'',_newLocName:''};
+      }else{S.pantryForm={...S.pantryForm,_addingLoc:false};}
+      renderPantryForm();
+    }
+    // Remember toggle
+    if(t.dataset.pftoggleremember){S.pantryForm={...S.pantryForm,_rememberItem:!S.pantryForm._rememberItem,_rememberAs:S.pantryForm._rememberAs||S.pantryForm.name};renderPantryForm();}
     if(t.dataset.editpantryitem){
       const it=S.pantry.find(x=>x.id===t.dataset.editpantryitem);
       if(it)update({pantryEditId:it.id,pantryAddOpen:false,
@@ -1911,7 +2013,7 @@ function doSaveManualLog(){
 async function doPushRecipeSensor(r,key){
   update({sensorPushing:{...S.sensorPushing,[key]:'pushing'}});
   const safe=n=>String(n||'').replace(/[^a-z0-9_]/gi,'_').toLowerCase();
-  const base=`renalkitchen_recipe_${safe(r.name).slice(0,30)}`;
+  const base=`healthkitchen_recipe_${safe(r.name).slice(0,30)}`;
   const nut=r.nutrition||{};
   const sensors=[
     {entity_id:`${base}_calories`,state:parseFloat(nut.calories)||0,unit:'kcal',icon:'mdi:fire',friendly_name:`${r.name} — Kalorien`},
@@ -1919,7 +2021,7 @@ async function doPushRecipeSensor(r,key){
     {entity_id:`${base}_sodium`,state:parseFloat(nut.sodium)||0,unit:'mg',icon:'mdi:shaker-outline',friendly_name:`${r.name} — Natrium`},
     {entity_id:`${base}_potassium`,state:parseFloat(nut.potassium)||0,unit:'mg',icon:'mdi:leaf',friendly_name:`${r.name} — Kalium`},
     {entity_id:`${base}_carbs`,state:parseFloat(nut.carbs)||0,unit:'g',icon:'mdi:grain',friendly_name:`${r.name} — Kohlenhydrate`},
-    {entity_id:`${base}_name`,state:r.name,icon:'mdi:food',friendly_name:'RenalKitchen — Letztes Rezept',
+    {entity_id:`${base}_name`,state:r.name,icon:'mdi:food',friendly_name:'HealthKitchen — Letztes Rezept',
       attributes:{emoji:r.emoji||'',prepTime:r.prepTime||'',cookTime:r.cookTime||'',servings:r.servings||1}},
   ];
   try{
@@ -1956,16 +2058,16 @@ async function doPushDailySensor(){
     totals.fat+=parseFloat(n.fat||0)*sv;
   });
   const calTarget=S.calorieTarget||0;
-  // Per-person entity IDs: sensor.renalkitchen_max_daily_calories
+  // Per-person entity IDs: sensor.healthkitchen_max_daily_calories
   const p=S.name?` (${S.name})`:'';
   const sensors=[
-    {entity_id:`renalkitchen_${slug}_daily_calories`,state:Math.round(totals.calories),unit:'kcal',icon:'mdi:fire',friendly_name:`RenalKitchen${p} — Kalorien heute`},
-    {entity_id:`renalkitchen_${slug}_daily_protein`,state:Math.round(totals.protein),unit:'g',icon:'mdi:food-steak',friendly_name:`RenalKitchen${p} — Protein heute`},
-    {entity_id:`renalkitchen_${slug}_daily_sodium`,state:Math.round(totals.sodium),unit:'mg',icon:'mdi:shaker-outline',friendly_name:`RenalKitchen${p} — Natrium heute`},
-    {entity_id:`renalkitchen_${slug}_daily_potassium`,state:Math.round(totals.potassium),unit:'mg',icon:'mdi:leaf',friendly_name:`RenalKitchen${p} — Kalium heute`},
-    {entity_id:`renalkitchen_${slug}_daily_carbs`,state:Math.round(totals.carbs),unit:'g',icon:'mdi:grain',friendly_name:`RenalKitchen${p} — Kohlenhydrate heute`},
-    {entity_id:`renalkitchen_${slug}_daily_meals`,state:todayLog.length,unit:'Mahlzeiten',icon:'mdi:food-fork-drink',friendly_name:`RenalKitchen${p} — Mahlzeiten heute`},
-    ...(calTarget>0?[{entity_id:`renalkitchen_${slug}_daily_calorie_pct`,state:Math.round(totals.calories/calTarget*100),unit:'%',icon:'mdi:percent',friendly_name:`RenalKitchen${p} — Kalorienziel %`}]:[]),
+    {entity_id:`healthkitchen_${slug}_daily_calories`,state:Math.round(totals.calories),unit:'kcal',icon:'mdi:fire',friendly_name:`HealthKitchen${p} — Kalorien heute`},
+    {entity_id:`healthkitchen_${slug}_daily_protein`,state:Math.round(totals.protein),unit:'g',icon:'mdi:food-steak',friendly_name:`HealthKitchen${p} — Protein heute`},
+    {entity_id:`healthkitchen_${slug}_daily_sodium`,state:Math.round(totals.sodium),unit:'mg',icon:'mdi:shaker-outline',friendly_name:`HealthKitchen${p} — Natrium heute`},
+    {entity_id:`healthkitchen_${slug}_daily_potassium`,state:Math.round(totals.potassium),unit:'mg',icon:'mdi:leaf',friendly_name:`HealthKitchen${p} — Kalium heute`},
+    {entity_id:`healthkitchen_${slug}_daily_carbs`,state:Math.round(totals.carbs),unit:'g',icon:'mdi:grain',friendly_name:`HealthKitchen${p} — Kohlenhydrate heute`},
+    {entity_id:`healthkitchen_${slug}_daily_meals`,state:todayLog.length,unit:'Mahlzeiten',icon:'mdi:food-fork-drink',friendly_name:`HealthKitchen${p} — Mahlzeiten heute`},
+    ...(calTarget>0?[{entity_id:`healthkitchen_${slug}_daily_calorie_pct`,state:Math.round(totals.calories/calTarget*100),unit:'%',icon:'mdi:percent',friendly_name:`HealthKitchen${p} — Kalorienziel %`}]:[]),
   ];
   try{
     await fetch(BASE+'rk/sensor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sensors})});
@@ -2027,6 +2129,20 @@ async function savePantryItem(editId){
       r=await fetch(BASE+'rk/pantry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json();
       update({pantry:[...S.pantry,d.item],pantryAddOpen:false});
+    }
+    // Remember settings for this item name if checkbox was checked
+    if(f._rememberItem&&f.name.trim()){
+      const keyword=(f._rememberAs||f.name).trim().toLowerCase();
+      let days=30;
+      if(f.expirationDate){
+        const diff=Math.round((new Date(f.expirationDate)-new Date())/(1000*60*60*24));
+        if(diff>0)days=diff;
+      }
+      const newEntry={k:[keyword],cat:f.category,loc:f.location,days};
+      const existing=S.customPantryDB.findIndex(e=>e.k.some(k=>k===keyword));
+      if(existing>=0)S.customPantryDB[existing]=newEntry;
+      else S.customPantryDB.push(newEntry);
+      await apiSet('customPantryDB',S.customPantryDB);
     }
   }catch(e){console.error('Pantry save failed',e);}
 }
@@ -2237,12 +2353,15 @@ initGlobalEvents();
     return Promise.race([p, new Promise(r=>setTimeout(()=>r(fallback),ms))]);
   }
   try{
-    const[status,profiles,favs,nutritionLog,haUsersRes]=await Promise.all([
+    const[status,profiles,favs,nutritionLog,haUsersRes,customCats,customLocs,customPantryDB]=await Promise.all([
       withTimeout(fetch(BASE+'rk/status').then(r=>r.json()),6000,{configured:false}),
       withTimeout(apiGet('profiles'),6000,null),
       withTimeout(apiGet('favourites'),6000,null),
       withTimeout(apiGet('nutritionLog'),6000,null),
       withTimeout(fetch(BASE+'rk/ha-users').then(r=>r.json()),6000,{users:[]}),
+      withTimeout(apiGet('customCats'),6000,null),
+      withTimeout(apiGet('customLocs'),6000,null),
+      withTimeout(apiGet('customPantryDB'),6000,null),
     ]);
     if(profiles&&profiles.length){
       S.profiles=profiles;
@@ -2251,6 +2370,9 @@ initGlobalEvents();
     if(favs)S.favs=favs;
     if(nutritionLog)S.nutritionLog=nutritionLog;
     if(haUsersRes?.users?.length)S.haUsers=haUsersRes.users;
+    if(customCats)S.customCats=customCats;
+    if(customLocs)S.customLocs=customLocs;
+    if(customPantryDB)S.customPantryDB=customPantryDB;
     S.favLoaded=true;
     loadPantry();
     update({ready:true,configured:status.configured,haToken:!!status.haToken});
@@ -2260,7 +2382,7 @@ initGlobalEvents();
     document.getElementById('app').innerHTML=`<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;color:#c4684a;text-align:center">
       <div style="font-size:2rem;margin-bottom:1rem">⚠</div>
       <div style="font-family:Georgia,serif;font-size:1.1rem;margin-bottom:.5rem">Verbindung fehlgeschlagen</div>
-      <div style="font-size:.82rem;color:#8a7060;max-width:320px;line-height:1.5">Konnte den RenalKitchen-Server nicht erreichen.<br>BASE: ${BASE}<br><br>Fehler: ${e.message}</div>
+      <div style="font-size:.82rem;color:#8a7060;max-width:320px;line-height:1.5">Konnte den HealthKitchen-Server nicht erreichen.<br>BASE: ${BASE}<br><br>Fehler: ${e.message}</div>
       <button onclick="location.reload()" style="margin-top:1.5rem;padding:.6rem 1.4rem;background:#c4684a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:.9rem">Neu laden</button>
     </div>`;
   }
